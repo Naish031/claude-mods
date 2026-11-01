@@ -1,0 +1,6 @@
+{
+  "name": "brain-dump",
+  "version": "0.1.0",
+  "author": { "name": "Naish Abbas" },
+  "description": "Turns a rambling voice dump into a clear, structured prompt before it is sent. Asks short multiple-choice questions when the ask is unclear."
+}
