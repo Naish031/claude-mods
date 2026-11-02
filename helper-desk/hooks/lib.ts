@@ -98,3 +98,23 @@ export function whole(v: unknown, fallback: number, min: number, max: number) {
   const n = typeof v === 'number' && Number.isFinite(v) ? v : fallback
   return Math.min(max, Math.max(min, n))
 }
+
+/** When the side pane opens by itself. The first is the default. */
+export const OPEN_MODES = ['with a task or helper', 'with helpers only', 'never'] as const
+export type OpenMode = (typeof OPEN_MODES)[number]
+
+/** The `open_pane` picker, or "never" when the old `auto_open_pane` switch is present and false. */
+export function openMode(picked: unknown, legacy: unknown): OpenMode {
+  if (legacy === false) return 'never'
+  return OPEN_MODES.find(m => m === picked) ?? OPEN_MODES[0]
+}
+
+/** A helper's final message as one short line: the first line with words in it, markdown marks and secrets removed. */
+export function summaryOf(text: unknown, max = 160): string {
+  if (typeof text !== 'string') return ''
+  for (const raw of text.slice(0, 4000).split('\n')) {
+    const line = oneLine(raw.replace(/^[\s>#*\-•]+/, '').replace(/\*\*|`/g, ''))
+    if (/[\p{L}\p{N}]/u.test(line)) return cut(scrub(line), max)
+  }
+  return ''
+}

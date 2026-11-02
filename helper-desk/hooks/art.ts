@@ -201,3 +201,23 @@ ${body}
 </g>
 </svg>`
 }
+
+// ---------- The live dot ----------
+
+export const DOT_PX = 14
+
+/**
+ * A small dot with a ring that swells and fades while Claude works. With animations off, or for a
+ * person who asks for less motion, it is a still dot. The word beside it says the state.
+ */
+export function liveDotSvg(color: string, animate: boolean): string {
+  const motion = animate
+    ? `.rg{transform-origin:7px 7px;animation:rg 1.8s ease-out infinite}@keyframes rg{from{transform:scale(1);opacity:.65}to{transform:scale(1.7);opacity:0}}` +
+      `@media (prefers-reduced-motion: reduce){.rg{animation:none;opacity:0}}`
+    : '.rg{opacity:0}'
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${DOT_PX}" height="${DOT_PX}" viewBox="0 0 14 14">
+<style>${motion}</style>
+<circle class="rg" cx="7" cy="7" r="4" fill="none" stroke="${color}" stroke-width="1.5"/>
+<circle cx="7" cy="7" r="4" fill="${color}"/>
+</svg>`
+}

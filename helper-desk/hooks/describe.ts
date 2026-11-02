@@ -58,7 +58,7 @@ export function describe(tool: string, args: Record<string, unknown>, home: stri
       }
     }
     case 'Bash': {
-      const label = text('description') || cut(scrub(text('command')), 80) || 'a command'
+      const label = cut(scrub(text('description')), 80) || cut(scrub(text('command')), 80) || 'a command'
       return plain('Command', label, `Running: ${label}`)
     }
     case 'BashOutput':
@@ -104,5 +104,37 @@ export function describe(tool: string, args: Record<string, unknown>, home: stri
       return plain('Tool', 'Write a plan', 'Writing a plan')
     default:
       return plain('Tool', tool, `Using ${tool}`)
+  }
+}
+
+/** Tools that stop the main chat until the person answers. */
+const WAITS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+export const waitsForYou = (tool: string) => WAITS.has(tool)
+
+/**
+ * A tool call of the main chat as a step. The same words as a helper's, except where the
+ * tool is the chat's own: its to-do list, a helper it starts, or a question to the person.
+ */
+export function describeMain(tool: string, args: Record<string, unknown>, home: string, planTool: string): Step {
+  const own = (kind: StepKind, label: string, live = label): Step => ({ kind, label, dim: '', live })
+  if (tool === planTool) return own('Tool', 'Update the plan', 'Updating the plan')
+  switch (tool) {
+    case 'TodoWrite':
+    case 'TaskCreate':
+    case 'TaskUpdate':
+    case 'TaskList':
+    case 'TaskGet':
+      return own('Tool', 'Update the to-do list', 'Updating the to-do list')
+    case 'Agent':
+    case 'Task': {
+      const d = typeof args.description === 'string' ? oneLine(args.description) : ''
+      return own('Subagent', d || 'Start a helper', d ? `Running a helper: ${cut(d, 60)}` : 'Running a helper')
+    }
+    case 'AskUserQuestion':
+      return own('Tool', 'Ask you a question', 'Asking you a question')
+    case 'ExitPlanMode':
+      return own('Tool', 'Ask you to approve the plan', 'Asking you to approve the plan')
+    default:
+      return describe(tool, args, home)
   }
 }

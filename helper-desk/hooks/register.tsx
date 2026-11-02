@@ -1,26 +1,27 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Helper, HelperPhase, PlanView, Step } from '../types'
-import { BAR_H, CARD_BAR_H, CRAB_FRAMES, CRAB_PX_H, CRAB_PX_W, cardBarSvg, crabSvg, hueOf, HUES, taskBarSvg } from './art'
-import { describe, KIND_COLOR } from './describe'
-import { clockTime, cut, flag, mix, oneLine, paletteOf, shortModel, tokenText, whole, workTokens } from './lib'
-import type { Usage } from './lib'
+import type { Helper, MainView, PlanView, Step } from '../types'
+import { BAR_H, CARD_BAR_H, CRAB_FRAMES, CRAB_PX_H, CRAB_PX_W, DOT_PX, cardBarSvg, crabSvg, hueOf, HUES, liveDotSvg, taskBarSvg } from './art'
+import { describe, describeMain, KIND_COLOR, waitsForYou } from './describe'
+import { clockTime, cut, flag, mix, oneLine, openMode, paletteOf, shortModel, summaryOf, tokenText, whole, workTokens } from './lib'
+import type { OpenMode, Usage } from './lib'
 import { applyTaskTool, doneCount, mergePlan, nowLine, planFileBody, readPlanFile, readTodos, readToolInput } from './plan'
 import type { StepIn } from './plan'
 
 // Helper Desk. Two things on screen:
-//   1. A task bar above the prompt that fills as Claude ticks off its to-do list.
-//   2. A side pane with one live card and one progress bar for every subagent.
+//   1. A task bar above the prompt that fills as Claude ticks off its to-do list, and says what is running.
+//   2. A side pane: a permanent card for the main chat (what Claude is doing right now), then one live card
+//      for every helper (subagent), then a short list of the helpers that finished lately.
 // The bar follows the main chat's to-do list: TodoWrite, the task tools, or this mod's own plan tool.
-// The pane follows subagents: what each one is doing, how long, how many tokens.
+// The pane follows tool calls: the main chat's (no agent id) and each helper's (its agent id).
 
 const NAME = 'helper-desk'
 const PANE = 'helpers'
 const TITLE = 'Helper Desk'
 const PLAN_TOOL = 'mcp__helper-desk__plan'
 
-const HELPERS = atom({ plugin: 'helper-desk', key: 'helpers' } as const, [] as Helper[], { shape: 'helpers-1' })
+const HELPERS = atom({ plugin: 'helper-desk', key: 'helpers' } as const, [] as Helper[], { shape: 'helpers-2' })
 const CLOCK = atom({ plugin: 'helper-desk', key: 'clock' } as const, { tick: 0, now: 0 })
 const VIEW = atom({ plugin: 'helper-desk', key: 'view' } as const, { open: [] as string[], folded: [] as string[], all: [] as string[] }, { shape: 'view-1' })
 const COST = atom({ plugin: 'helper-desk', key: 'cost' } as const, { usd: null as number | null })
@@ -28,9 +29,16 @@ const OFF = atom({ plugin: 'helper-desk', key: 'off' } as const, false)
 const HIDDEN = atom({ plugin: 'helper-desk', key: 'hidden' } as const, false)
 const PLAN = atom({ plugin: 'helper-desk', key: 'plan' } as const, null as PlanView | null, { shape: 'plan-1' })
 const SHIM = atom({ plugin: 'helper-desk', key: 'shimmer' } as const, 0)
+const idleMain = (): MainView => ({ state: 'idle', line: '', dim: '', running: false, startedAt: 0, endedAt: 0, count: 0, steps: [] })
+const MAIN = atom({ plugin: 'helper-desk', key: 'main' } as const, idleMain(), { shape: 'main-1' })
+const OPENED = atom({ plugin: 'helper-desk', key: 'opened' } as const, false)
 
 const TICK_MS = 300
+// While only the main chat works there is no crab to move: a slower redraw is enough for the clock and the dot.
+const MAIN_TICK_MS = 500
 const SLOW_TICK_MS = 1000
+// A turn with no event at all and no tool running for this long is taken as over (a missed end).
+const MAIN_STALL_MS = 20 * 60_000
 const POLL_MS = 2000
 const SHIMMER_MS = 600
 // How long a switches.json reading is trusted.
@@ -38,6 +46,13 @@ const SWITCH_TTL_MS = 1000
 const HISTORY = 3
 const MAX_STEPS = 200
 const MAX_HELPERS = 60
+// Steps the main card keeps, and shows.
+const MAIN_KEEP = 8
+const MAIN_SHOWN = 5
+// Finished helpers in the Recent group.
+const RECENT = 10
+// Room for the state word and its dot beside a card's title.
+const STATE_W = 10
 // Finished and stopped cards shown before "Show more".
 const CARDS_SHOWN = 5
 const TAG_W = 11
@@ -57,6 +72,11 @@ const ACCENT = 'claude'
 const SPIN = ['◐', '◓', '◑', '◒']
 const PULSE = ['●∙∙', '∙●∙', '∙∙●', '∙●∙']
 const FAIL_HEX = '#dc2626'
+// The tag that names a helper's agent type. Mid grey with white text reads on light and dark.
+const TAG_BG = '#6b7280'
+const TAG_FG = '#ffffff'
+// The live dot on the desktop; the same orange as the app's own accent.
+const DOT_HEX = '#d97757'
 
 const NATIVE_LIST = ['TodoWrite', 'TaskCreate']
 const MIRRORED = new Set(['TodoWrite', 'TaskCreate', 'TaskUpdate'])
@@ -89,7 +109,7 @@ type Handle = { cancel: () => void }
 const cfg = {
   palette: paletteOf(undefined),
   animate: true,
-  autoOpen: true,
+  openPane: 'with a task or helper' as OpenMode,
   nudges: true,
   toasts: true,
   holdMs: 20_000,
@@ -102,6 +122,13 @@ const s = {
   ready: null as Promise<void> | null,
   off: false,
   hidden: false,
+  opened: false,
+  main: idleMain(),
+  mainIn: 0,
+  mainWait: 0,
+  mainAt: 0,
+  tickMs: 0,
+  dirty: { helpers: false, main: false },
   checkedAt: Number.NEGATIVE_INFINITY,
   toolMade: false,
   helpers: [] as Helper[],
@@ -130,6 +157,9 @@ const s = {
 
 const working = () => s.helpers.filter(h => h.phase === 'working').length
 const mods = () => `${s.home}/.claude/claude-mods`
+
+/** The folder after a step's words, cut from its head so the end of the path stays. Nothing when there is no room. */
+const dimTail = (dim: string, room: number) => (!dim || room < 4 ? '' : dim.length > room ? `…${dim.slice(-(room - 1))}` : dim)
 
 // ---------- Log and files ----------
 
@@ -168,6 +198,12 @@ async function init($: EngineInterface) {
           s.seats = Math.max(...s.helpers.map(h => h.seat)) + 1
           s.nextHue = (Math.max(...s.helpers.map(h => h.hue)) + 1) % HUES.length
         }
+      }
+      if (!s.opened) s.opened = await read($, OPENED)
+      if (s.main.state === 'idle' && !s.main.count) {
+        // A turn that was running when the module reloaded may be over: draw it idle and let the next event say.
+        const saved = await read($, MAIN)
+        if (saved.count) s.main = { ...saved, state: 'idle', line: '', dim: '', running: false, endedAt: saved.endedAt || saved.startedAt, steps: [...saved.steps] }
       }
       if (!s.plan) {
         s.plan = (await read($, PLAN)) ?? (await loadPlanFile($))
@@ -217,6 +253,9 @@ async function refreshSwitch($: EngineInterface, force = false) {
       await $.ui.close({ id: PANE }).catch(() => undefined)
       s.hold?.cancel()
       s.hold = null
+      // Nothing is tracked while off: the main card starts again from idle.
+      resetMain()
+      await update($, MAIN, () => idleMain())
     } else {
       await ensureTool($)
     }
@@ -255,7 +294,30 @@ async function setHidden($: EngineInterface, value: boolean) {
 }
 
 async function openPane($: EngineInterface) {
+  // Any open counts: the pane then never opens by itself again in this chat.
+  if (!s.opened) {
+    s.opened = true
+    void update($, OPENED, () => true).catch(() => undefined)
+  }
   await $.ui.open({ id: PANE, title: TITLE })
+}
+
+/**
+ * Opens the pane by itself, once per chat, as the `open_pane` setting says. A person who closed
+ * or hid it is not asked again: only /helpers brings it back.
+ */
+async function autoOpen($: EngineInterface, why: 'helper' | 'plan') {
+  if (s.opened || s.off || s.hidden) return
+  if (cfg.openPane === 'never' || (why === 'plan' && cfg.openPane !== 'with a task or helper')) return
+  try {
+    await openPane($)
+    log($, `pane opened with a ${why}`)
+  } catch (err) {
+    // No room now: try again on the next one.
+    s.opened = false
+    void update($, OPENED, () => false).catch(() => undefined)
+    logFail($, 'open pane')(err)
+  }
 }
 
 // ---------- The plan tool ----------
@@ -303,6 +365,8 @@ async function tick($: EngineInterface) {
   s.tickN += 1
   const now = await $.clock.now()
   await update($, CLOCK, () => ({ tick: s.tickN, now }))
+  // A turn whose end was never heard stops showing as working.
+  if (s.main.state !== 'idle' && s.mainIn === 0 && now - s.mainAt > MAIN_STALL_MS) endMainTurn($, now)
   await refreshSwitch($)
 }
 
@@ -345,18 +409,31 @@ async function poll($: EngineInterface) {
   await refreshSwitch($)
 }
 
+/** The clock runs only while a helper or the main chat is at work: nothing running, no timers. */
 function syncTimers($: EngineInterface) {
-  if (working() > 0 && !s.off) {
-    s.ticker ??= $.clock.every(cfg.animate ? TICK_MS : SLOW_TICK_MS, () => {
+  const helpers = working() > 0 && !s.off
+  const busy = helpers || (s.main.state !== 'idle' && !s.off)
+  if (busy) {
+    // Crabs move on the fast tick; the main card alone needs only the clock and its dot.
+    const ms = !cfg.animate ? SLOW_TICK_MS : helpers ? TICK_MS : MAIN_TICK_MS
+    if (s.ticker && s.tickMs !== ms) {
+      s.ticker.cancel()
+      s.ticker = null
+    }
+    s.tickMs = ms
+    s.ticker ??= $.clock.every(ms, () => {
       void tick($).catch(logFail($, 'tick'))
     })
+  } else {
+    s.ticker?.cancel()
+    s.ticker = null
+  }
+  if (helpers) {
     s.poller ??= $.clock.every(POLL_MS, () => {
       void poll($).catch(logFail($, 'poll'))
     })
   } else {
-    s.ticker?.cancel()
     s.poller?.cancel()
-    s.ticker = null
     s.poller = null
   }
 }
@@ -378,15 +455,27 @@ function syncShimmer($: EngineInterface) {
 // ---------- Subagents ----------
 
 async function publish($: EngineInterface) {
-  const copy = s.helpers.map(h => ({ ...h, steps: [...h.steps] }))
-  await update($, HELPERS, () => copy)
+  const { helpers, main } = s.dirty
+  s.dirty = { helpers: false, main: false }
+  if (helpers) {
+    const copy = s.helpers.map(h => ({ ...h, steps: [...h.steps] }))
+    await update($, HELPERS, () => copy)
+  }
+  if (main) {
+    const copy: MainView = { ...s.main, steps: [...s.main.steps] }
+    await update($, MAIN, () => copy)
+  }
   const now = await $.clock.now()
   await update($, CLOCK, () => ({ tick: s.tickN, now }))
   syncTimers($)
 }
 
-/** Redraws once now, and once more if more arrived meanwhile, so a burst of tool calls costs few redraws. */
-function schedulePublish($: EngineInterface): Promise<void> {
+/**
+ * Redraws once now, and once more if more arrived meanwhile, so a burst of tool calls costs few
+ * redraws. `part` says which copy changed: only that one is sent to the screen.
+ */
+function schedulePublish($: EngineInterface, part: 'helpers' | 'main' = 'helpers'): Promise<void> {
+  s.dirty[part] = true
   if (s.pub) {
     s.again = true
     return s.pub
@@ -436,7 +525,6 @@ async function addHelper($: EngineInterface, id: string, description: string, ty
     await schedulePublish($)
     return
   }
-  const wasIdle = working() === 0
   s.helpers.push({
     id,
     description: description || 'Subagent',
@@ -445,6 +533,7 @@ async function addHelper($: EngineInterface, id: string, description: string, ty
     effort: '',
     phase: 'working',
     note: '',
+    result: '',
     startedAt: await $.clock.now(),
     endedAt: 0,
     count: 0,
@@ -459,8 +548,8 @@ async function addHelper($: EngineInterface, id: string, description: string, ty
   trimHelpers()
   log($, `helper started: ${type || 'subagent'}`)
   await schedulePublish($)
-  // The pane opens by itself when a new round of helpers starts.
-  if (wasIdle && cfg.autoOpen && !s.hidden) void openPane($).catch(logFail($, 'open pane'))
+  // The pane opens by itself with the chat's first helper (the setting can say no).
+  void autoOpen($, 'helper')
 }
 
 /** A helper this mod missed (a reload, a race) is taken from $.agent.list(). */
@@ -485,6 +574,7 @@ async function noteTool($: EngineInterface, id: string, step: Step) {
   if (h.phase !== 'working') {
     h.phase = 'working'
     h.note = ''
+    h.result = ''
     h.endedAt = 0
   }
   await schedulePublish($)
@@ -509,7 +599,7 @@ const END_NOTE: Record<string, string> = {
   refusal: 'The model declined',
 }
 
-async function finish($: EngineInterface, id: string, reason: string, usage: Usage | null) {
+async function finish($: EngineInterface, id: string, reason: string, usage: Usage | null, answer: unknown) {
   const h = s.helpers.find(x => x.id === id)
   if (!h) return
   // The turn's own sum wins over the steps counted so far.
@@ -519,6 +609,8 @@ async function finish($: EngineInterface, id: string, reason: string, usage: Usa
   const failed = reason !== 'answer'
   h.phase = failed ? 'failed' : 'done'
   h.note = failed ? (END_NOTE[reason] ?? 'It stopped early') : ''
+  // The first line of its report, kept short and with secrets hidden. On screen only, never in the log.
+  h.result = failed ? '' : summaryOf(answer)
   h.endedAt = await $.clock.now()
   log($, `helper ${failed ? 'stopped' : 'done'}: ${h.type}, ${h.count} steps`)
   await schedulePublish($)
@@ -529,6 +621,98 @@ async function clearFinished($: EngineInterface) {
   s.helpers = s.helpers.filter(h => h.phase === 'working')
   await update($, VIEW, v => ({ ...v, open: v.open.filter(id => s.helpers.some(h => h.id === id)) }))
   await schedulePublish($)
+}
+
+// ---------- The main chat ----------
+// The main chat has no agent id, so its tool calls and turns are tracked here as one record.
+
+function resetMain() {
+  s.main = idleMain()
+  s.mainIn = 0
+  s.mainWait = 0
+  s.mainAt = 0
+}
+
+/** A turn starts: a fresh count. Does nothing when one is already running (a continuation). */
+function startMainTurn(now: number) {
+  if (s.main.state !== 'idle') return false
+  s.main = { ...idleMain(), state: 'working', line: 'Thinking', startedAt: now, steps: [] }
+  s.mainIn = 0
+  s.mainWait = 0
+  s.mainAt = now
+  return true
+}
+
+/** The turn is over: back to idle, keeping the last steps and the turn's length. */
+function endMainTurn($: EngineInterface, now: number) {
+  if (s.main.state === 'idle') return
+  s.main = { ...s.main, state: 'idle', line: '', dim: '', running: false, endedAt: now }
+  s.mainIn = 0
+  s.mainWait = 0
+  s.mainAt = now
+  void schedulePublish($, 'main').catch(logFail($, 'main'))
+}
+
+/** A model request of the main chat: between tools it is thinking. */
+function thinkMain($: EngineInterface, now: number) {
+  const started = startMainTurn(now)
+  s.mainAt = now
+  if (s.mainIn === 0 && (started || s.main.line !== 'Thinking' || s.main.running)) {
+    s.main = { ...s.main, state: 'working', line: 'Thinking', dim: '', running: false }
+    void schedulePublish($, 'main').catch(logFail($, 'main'))
+  }
+}
+
+/** A tool call of the main chat begins. */
+function beginMainTool($: EngineInterface, now: number, step: Step, waits: boolean) {
+  startMainTurn(now)
+  s.mainIn += 1
+  if (waits) s.mainWait += 1
+  s.mainAt = now
+  s.main = {
+    ...s.main,
+    state: s.mainWait > 0 ? 'waiting' : 'working',
+    line: step.live,
+    dim: step.dim,
+    running: true,
+    count: s.main.count + 1,
+    steps: [...s.main.steps, step].slice(-MAIN_KEEP),
+  }
+  void schedulePublish($, 'main').catch(logFail($, 'main'))
+}
+
+/** It ends. A call that ends after its turn did leaves the card idle. */
+function endMainTool($: EngineInterface, waits: boolean) {
+  s.mainIn = Math.max(0, s.mainIn - 1)
+  if (waits) s.mainWait = Math.max(0, s.mainWait - 1)
+  if (s.main.state === 'idle') return
+  const running = s.mainIn > 0
+  const state = s.mainWait > 0 ? 'waiting' : 'working'
+  s.main = running ? { ...s.main, state, running } : { ...s.main, state, running, line: 'Thinking', dim: '' }
+  void schedulePublish($, 'main').catch(logFail($, 'main'))
+}
+
+/** Runs one main-chat tool call and keeps the card in step with it. Never changes what the call does. */
+async function trackMain<T>($: EngineInterface, tool: string, args: Record<string, unknown>, run: () => Promise<T>): Promise<T> {
+  const waits = waitsForYou(tool)
+  let tracked = false
+  try {
+    beginMainTool($, await $.clock.now(), describeMain(tool, args, s.home, PLAN_TOOL), waits)
+    tracked = true
+  } catch (err) {
+    log($, `main step failed: ${String(err).slice(0, 160)}`)
+  }
+  try {
+    return await run()
+  } finally {
+    if (tracked) {
+      try {
+        endMainTool($, waits)
+      } catch (err) {
+        log($, `main step end failed: ${String(err).slice(0, 160)}`)
+      }
+    }
+  }
 }
 
 // ---------- The plan ----------
@@ -609,6 +793,8 @@ async function applyPlan($: EngineInterface, title: string | undefined, incoming
   log($, `plan: ${doneCount(plan.steps)} of ${plan.steps.length} steps done`)
   writePlanFile($)
   await drawPlan($)
+  // The first list of the chat opens the pane too, unless the setting keeps it to helpers.
+  if (plan.steps.length) void autoOpen($, 'plan')
 }
 
 /** The plan tool's own call: check the input, save it, answer in one line. */
@@ -678,6 +864,11 @@ async function resetDesk($: EngineInterface) {
   s.promptTitle = ''
   s.ready = null
   s.sessionId = ''
+  s.opened = false
+  resetMain()
+  s.dirty = { helpers: false, main: false }
+  await update($, MAIN, () => idleMain())
+  await update($, OPENED, () => false)
   await update($, HELPERS, () => [])
   await update($, PLAN, () => null)
   await update($, VIEW, () => ({ open: [], folded: [], all: [] }))
@@ -687,7 +878,7 @@ async function resetDesk($: EngineInterface) {
 export const register: Register = (on, options) => {
   cfg.palette = paletteOf(options.bar_color)
   cfg.animate = flag(options.animations, true)
-  cfg.autoOpen = flag(options.auto_open_pane, true)
+  cfg.openPane = openMode(options.open_pane, options.auto_open_pane)
   cfg.nudges = flag(options.nudges, true)
   cfg.toasts = flag(options.toasts, true)
   cfg.holdMs = whole(options.hold_seconds, 20, 0, 600) * 1000
@@ -700,7 +891,7 @@ export const register: Register = (on, options) => {
       await refreshSwitch($, true)
       await $.command.register({
         name: 'helpers',
-        description: 'Show the Helper Desk: the task progress bar and one live card per subagent',
+        description: 'Show the Helper Desk: what Claude is doing now, one live card per helper, and the task progress bar',
         argumentHint: '[hide | clear]',
         immediate: true,
       })
@@ -822,7 +1013,7 @@ export const register: Register = (on, options) => {
       if (agentId) return { result: 'Only the main chat keeps a plan. Carry on with your task.' } as never
       let said = 'Plan not saved: something went wrong. Carry on.'
       try {
-        said = await planFromTool($, args)
+        said = await trackMain($, tool, args, () => planFromTool($, args))
       } catch (err) {
         log($, `plan failed: ${String(err).slice(0, 160)}`)
       }
@@ -841,7 +1032,7 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     if (MIRRORED.has(tool)) {
-      const r = await next(e)
+      const r = await trackMain($, tool, args, () => next(e))
       s.turnPlanned = true
       s.sincePlan = 0
       s.staleNudged = false
@@ -849,7 +1040,7 @@ export const register: Register = (on, options) => {
       void mirror($, tool, args, r).catch(logFail($, `mirror ${tool}`))
       return r
     }
-    const r = await next(e)
+    const r = await trackMain($, tool, args, () => next(e))
     return cfg.nudges ? withNudge(r) : r
   }).catch(($, e, next) => next(e))
 
@@ -890,8 +1081,29 @@ export const register: Register = (on, options) => {
     }
   })
 
-  // Each model request of a helper: its model, effort and token counts.
+  // A turn of the main chat begins: the first card turns to Working.
+  on('turn.start', async ($, e, next) => {
+    const r = await next(e)
+    try {
+      if (!e.agentId && !s.off) {
+        await init($)
+        s.turnRunning = true
+        syncShimmer($)
+        if (startMainTurn(await $.clock.now())) await schedulePublish($, 'main')
+      }
+    } catch (err) {
+      log($, `turn start hook failed: ${String(err).slice(0, 160)}`)
+    }
+    return r
+  }).catch(($, e, next) => next(e))
+
+  // Each model request: the main chat is thinking; a helper's gives its model, effort and token counts.
   on('turn.step', async function* ($, e, next) {
+    try {
+      if (!e.agentId && !s.off) thinkMain($, await $.clock.now())
+    } catch (err) {
+      log($, `main step hook failed: ${String(err).slice(0, 160)}`)
+    }
     const r = yield* next(e)
     try {
       const id = e.agentId
@@ -912,8 +1124,9 @@ export const register: Register = (on, options) => {
       if (!id) {
         s.turnRunning = false
         syncShimmer($)
+        if (!s.off) endMainTurn($, await $.clock.now())
       } else if (!s.off && s.helpers.some(h => h.id === id)) {
-        void finish($, id, e.isAborted ? 'aborted' : e.reason, (e.usage ?? null) as Usage | null).catch(logFail($, 'turn'))
+        void finish($, id, e.isAborted ? 'aborted' : e.reason, (e.usage ?? null) as Usage | null, e.answer).catch(logFail($, 'turn'))
       }
     } catch (err) {
       log($, `turn hook failed: ${String(err).slice(0, 160)}`)
@@ -926,7 +1139,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
     const isOff = await read($, OFF)
     if (isOff || s.off) return next(e)
-    const { animate, palette } = cfg
+    const { animate } = cfg
     const els = $.ui.resolve(e)
     const { Box, Text, Button } = els
     // Svg draws on desktop, the editor and mobile; the terminal gets glyphs.
@@ -935,13 +1148,17 @@ export const register: Register = (on, options) => {
     const clk = await read($, CLOCK)
     const view = await read($, VIEW)
     const cost = await read($, COST)
+    const main = await read($, MAIN)
     const width = Math.max(32, e.props.bodyColumns)
     // Inside a card: its border and padding take 4 columns, the crab PET_W more.
     const cw = width - 4 - PET_W
+    const iw = width - 4
 
     const running = list.filter(hp => hp.phase === 'working')
     const finished = list.filter(hp => hp.phase === 'done').sort((a, b) => b.endedAt - a.endedAt)
     const stopped = list.filter(hp => hp.phase === 'failed').sort((a, b) => b.endedAt - a.endedAt)
+    // The last few helpers to end, done or stopped, newest first.
+    const recent = [...finished, ...stopped].sort((a, b) => b.endedAt - a.endedAt).slice(0, RECENT)
 
     // Header tiles: only numbers the engine gave.
     const tiles: { label: string; value: string }[] = []
@@ -975,15 +1192,95 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // The small grey tag that names an agent type.
+    const tag = (type: string) => (
+      <Text key="tag" color={TAG_FG} backgroundColor={TAG_BG}>
+        {` ${cut(type, 18)} `}
+      </Text>
+    )
+
+    // ----- The main chat's card: always there, at the top -----
+    const mainCard = () => {
+      const m = main
+      const live = m.state !== 'idle'
+      const word = m.state === 'working' ? 'Working' : m.state === 'waiting' ? 'Waiting for you' : 'Idle'
+      const tone = m.state === 'working' ? ACCENT : m.state === 'waiting' ? WARN : undefined
+      const turnMs = live ? Math.max(clk.now, m.startedAt) - m.startedAt : m.endedAt > m.startedAt ? m.endedAt - m.startedAt : 0
+      const tools = `${m.count} tool${m.count === 1 ? '' : 's'}`
+      const meta = live ? `${clockTime(turnMs)} · ${tools} this turn` : m.count ? `Last turn ${clockTime(turnMs)} · ${tools}` : ''
+      // A state is a dot AND a word. Only a working Claude on the desktop gets the pulsing dot.
+      const glyph = m.state === 'idle' ? '○' : m.state === 'waiting' ? '◐' : animate ? SPIN[clk.tick % SPIN.length]! : '●'
+      const dot =
+        m.state === 'working' && Svg && animate ? (
+          <Svg key="main-dot" source={liveDotSvg(DOT_HEX, true)} alt="Claude is working" width={DOT_PX} height={DOT_PX} />
+        ) : (
+          <Text key="main-dot" bold color={tone} dimColor={!live}>
+            {m.state === 'working' && Svg ? '●' : glyph}
+          </Text>
+        )
+      const line = cut(live ? m.line || 'Thinking' : 'Ready for your next message', iw)
+      const where = live && m.running ? dimTail(m.dim, iw - line.length - 2) : ''
+      const past = (live && m.running ? m.steps.slice(0, -1) : m.steps).slice(-MAIN_SHOWN)
+      return (
+        <Box
+          key="main-card"
+          flexDirection="column"
+          width={width}
+          marginBottom={1}
+          borderStyle="round"
+          borderColor={tone}
+          borderDimColor={!live}
+          paddingX={1}
+          paddingY={1}
+        >
+          <Box key="main-head" flexDirection="row" justifyContent="space-between" width={iw}>
+            <Text bold wrap="truncate-end">
+              Claude (this chat)
+            </Text>
+            <Box key="main-state" flexDirection="row" gap={1} flexShrink={0}>
+              {dot}
+              <Text bold color={tone} dimColor={!live}>
+                {word}
+              </Text>
+            </Box>
+          </Box>
+          <Box key="main-line" flexDirection="row" width={iw} marginTop={1}>
+            <Text wrap="truncate-end">
+              <Text bold={live} color={tone} dimColor={!live}>
+                {line}
+              </Text>
+              {where ? <Text dimColor>{`  ${where}`}</Text> : null}
+            </Text>
+          </Box>
+          {meta ? (
+            <Text key="main-meta" dimColor wrap="truncate-end">
+              {cut(meta, iw)}
+            </Text>
+          ) : null}
+          {past.length ? (
+            <Box key="main-steps" flexDirection="column" width={iw} marginTop={1}>
+              {past.map((st, i) => (
+                <Text key={`main-step-${i}`} dimColor wrap="truncate-end">
+                  {cut(`✓ ${st.live}`, iw)}
+                </Text>
+              ))}
+            </Box>
+          ) : null}
+        </Box>
+      )
+    }
+
+    // ----- A helper's card -----
     const card = (hp: Helper) => {
       const hue = hueOf(hp.hue)
       const live = hp.phase === 'working'
       const isOpen = view.open.includes(hp.id)
       const mark = live ? '●' : hp.phase === 'done' ? '✓' : '✗'
-      const markColor = hp.phase === 'failed' ? BAD : GOOD
+      const word = live ? 'Working' : hp.phase === 'done' ? 'Done' : 'Stopped'
+      const markColor = live ? ACCENT : hp.phase === 'failed' ? BAD : GOOD
       const time = clockTime((live ? Math.max(clk.now, hp.startedAt) : hp.endedAt) - hp.startedAt)
-      const meta = [hp.hasUsage ? `${tokenText(hp.tokens + hp.turnTokens)} tokens` : '', time].filter(Boolean).join(' · ')
-      const who = [hp.type, hp.model, hp.effort].filter(Boolean).join(' · ')
+      const meta = [hp.hasUsage ? `${tokenText(hp.tokens + hp.turnTokens)} tokens` : '', live ? time : `took ${time}`].filter(Boolean).join(' · ')
+      const model = [hp.model, hp.effort].filter(Boolean).join(' · ')
       const current = hp.steps[hp.steps.length - 1]
       const stepsWord = `${hp.count} step${hp.count === 1 ? '' : 's'}`
       const spin = animate ? SPIN[clk.tick % SPIN.length]! : '●'
@@ -995,7 +1292,8 @@ export const register: Register = (on, options) => {
           : `${hp.note || 'Stopped before it finished'} · ${stepsWord}`
       // Room for the spinner and pulse on a live line.
       const leadW = Math.max(6, cw - (live ? 2 + pulse.length + 1 : 0))
-      const history = (live ? hp.steps.slice(0, -1) : hp.steps).slice(-HISTORY)
+      // A finished card with a result shows that instead of its last steps.
+      const history = live || !hp.result ? (live ? hp.steps.slice(0, -1) : hp.steps).slice(-HISTORY) : []
       const rowW = cw - TAG_W
       // About 6.5 CSS pixels a column, as the crab's 48 pixels fill its 8.
       const barPx = Math.max(60, Math.floor(cw * 6.5))
@@ -1028,19 +1326,26 @@ export const register: Register = (on, options) => {
           {pet(hp)}
           <Box flexDirection="column" width={cw}>
             <Box flexDirection="row" justifyContent="space-between" width={cw}>
-              <Box width={cw - 2}>
+              <Box width={cw - STATE_W}>
                 <Text bold wrap="truncate-end">
-                  {cut(hp.description, cw - 2)}
+                  {cut(hp.description, cw - STATE_W)}
                 </Text>
               </Box>
-              <Text bold color={markColor}>
-                {mark}
-              </Text>
+              <Box width={STATE_W} justifyContent="flex-end">
+                <Text bold color={markColor}>
+                  {`${mark} ${word}`}
+                </Text>
+              </Box>
             </Box>
             <Box flexDirection="row" justifyContent="space-between" width={cw}>
-              <Text dimColor wrap="truncate-end">
-                {cut(who, Math.max(4, cw - meta.length - 1))}
-              </Text>
+              <Box flexDirection="row" flexShrink={1}>
+                {tag(hp.type)}
+                {model ? (
+                  <Text dimColor wrap="truncate-end">
+                    {` ${cut(model, Math.max(4, cw - meta.length - 24))}`}
+                  </Text>
+                ) : null}
+              </Box>
               <Text dimColor>{meta}</Text>
             </Box>
             <Box flexDirection="row" width={cw} marginTop={1}>
@@ -1056,6 +1361,11 @@ export const register: Register = (on, options) => {
               </Box>
               {live ? <Text color={ACCENT}>{` ${pulse}`}</Text> : null}
             </Box>
+            {!live && hp.result ? (
+              <Text key={`result-${hp.id}`} wrap="truncate-end">
+                {cut(hp.result, cw)}
+              </Text>
+            ) : null}
             {!isOpen &&
               history.map((st, i) => (
                 <Text key={`hp-${hp.id}-${i}`} dimColor wrap="truncate-end">
@@ -1083,8 +1393,7 @@ export const register: Register = (on, options) => {
                 {hp.count > hp.steps.length ? <Text dimColor>{`${hp.count - hp.steps.length} older steps not kept`}</Text> : null}
                 {hp.steps.map((st, i) => {
                   // The label wins the row; the folder gives way first.
-                  const room = rowW - st.label.length - 2
-                  const dim = !st.dim || st.label.length >= rowW || room < 4 ? '' : st.dim.length > room ? `…${st.dim.slice(-(room - 1))}` : st.dim
+                  const dim = dimTail(st.dim, rowW - st.label.length - 2)
                   return (
                     <Box key={`s-${hp.id}-${i}`} flexDirection="row" width={cw}>
                       <Box width={TAG_W}>
@@ -1106,8 +1415,37 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // ----- One line of the Recent group: a helper that ended, what it said, how long it took -----
+    const recentRow = (hp: Helper) => {
+      const done = hp.phase === 'done'
+      const rw = width - 4
+      const took = `took ${clockTime(hp.endedAt - hp.startedAt)}`
+      const status = done ? (hp.result ? `Done · ${hp.result}` : 'Done') : hp.note || 'Stopped'
+      return (
+        <Box key={`recent-${hp.id}`} flexDirection="column" width={width} paddingX={1} marginBottom={1}>
+          <Box flexDirection="row" justifyContent="space-between" width={rw}>
+            <Box flexDirection="row" width={rw - took.length - 1}>
+              <Text bold color={done ? GOOD : BAD}>
+                {done ? '✓ ' : '✗ '}
+              </Text>
+              <Text bold wrap="truncate-end">
+                {cut(hp.description, rw - took.length - 4)}
+              </Text>
+            </Box>
+            <Text dimColor>{took}</Text>
+          </Box>
+          <Box flexDirection="row" width={rw}>
+            {tag(hp.type)}
+            <Text color={done ? undefined : BAD} dimColor={done} wrap="truncate-end">
+              {` ${cut(status, Math.max(4, rw - 22))}`}
+            </Text>
+          </Box>
+        </Box>
+      )
+    }
+
     // A heading per group: a filled bar the full width, its title and count, and an arrow that folds the group.
-    const group = (id: string, title: string, members: Helper[], fill: string, capped: boolean) => {
+    const group = (id: string, title: string, members: Helper[], fill: string, capped: boolean, draw: (hp: Helper) => unknown = card) => {
       if (!members.length) return null
       const folded = view.folded.includes(id)
       const label = `${title} · ${members.length}`
@@ -1127,7 +1465,7 @@ export const register: Register = (on, options) => {
               {label.padEnd(room)}
             </Text>
           </Box>
-          {folded ? null : shown.map(card)}
+          {folded ? null : shown.map(hp => draw(hp) as never)}
           {folded || !capped || members.length <= CARDS_SHOWN ? null : (
             <Button key={`more-${id}`} plain dimColor onPress={() => undefined}>
               {showAll ? '▴ Show fewer' : `▾ Show ${hiddenCount} more`}
@@ -1139,6 +1477,7 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" width={width}>
+        {mainCard()}
         <Box key="header" flexDirection="row" justifyContent="space-between" gap={1} width={width} marginBottom={1}>
           <Text bold color={running.length ? ACCENT : list.length ? GOOD : undefined}>
             {list.length ? `${list.length} subagent${list.length === 1 ? '' : 's'} in this chat` : 'No subagents yet'}
@@ -1162,8 +1501,13 @@ export const register: Register = (on, options) => {
             ))}
           </Box>
         ) : null}
-        {list.length ? null : <Text dimColor>Cards show up here when Claude starts a subagent.</Text>}
+        {list.length ? null : (
+          <Text key="empty" dimColor>
+            {main.state === 'idle' ? 'Nothing running. Claude is idle.' : 'No helpers running. Claude is doing the work itself.'}
+          </Text>
+        )}
         {group('running', 'Running', running, GOOD, false)}
+        {group('recent', 'Recent', recent, 'inactive', false, recentRow)}
         {group('finished', 'Finished', finished, WARN, true)}
         {group('stopped', 'Stopped', stopped, BAD, true)}
       </Box>
@@ -1191,6 +1535,21 @@ export const register: Register = (on, options) => {
     const label = `Tasks ${done}/${n}`
     const line = nowLine(p)
     const live = p.steps.some(st => st.status === 'in_progress')
+    // What is running right now: a chip when helpers work, and the newest one's live line, else the main chat's.
+    const working = (await read($, HELPERS)).filter(hp => hp.phase === 'working')
+    const newest = working[working.length - 1]
+    const mainNow = await read($, MAIN)
+    const chip = working.length ? `${working.length} helper${working.length === 1 ? '' : 's'} working` : ''
+    const doing = newest
+      ? `${newest.description} · ${newest.steps[newest.steps.length - 1]?.live ?? 'Getting started'}`
+      : mainNow.state !== 'idle'
+        ? `Claude · ${mainNow.state === 'waiting' ? 'waiting for you · ' : ''}${mainNow.line || 'Thinking'}`
+        : ''
+    const chipEl = chip ? (
+      <Text key="plan-chip" bold color={TAG_FG} backgroundColor={palette.deep}>
+        {` ${chip} `}
+      </Text>
+    ) : null
     const dismiss = <Button key="plan-dismiss" label="✕" plain dimColor role="dismiss" onPress={() => undefined} />
     const w = cols || BAND_FALLBACK_COLS
 
@@ -1215,6 +1574,16 @@ export const register: Register = (on, options) => {
             <Svg key="plan-svg" source={taskBarSvg({ done, steps: n, live, width: px, palette, animate })} alt={`${p.title}: ${label}, ${pct}`} width={px} height={BAR_H} />
             {dismiss}
           </Box>
+          {doing ? (
+            <Box key="plan-act" flexDirection="row" gap={1}>
+              {chipEl}
+              <Box flexShrink={1}>
+                <Text dimColor wrap="truncate-end">
+                  {cut(doing, Math.max(10, w - chip.length - 4))}
+                </Text>
+              </Box>
+            </Box>
+          ) : null}
         </Box>
       )
     } else {
@@ -1253,6 +1622,16 @@ export const register: Register = (on, options) => {
             <Text key="plan-now" dimColor wrap="truncate-end">
               {cut(line, w)}
             </Text>
+          ) : null}
+          {doing ? (
+            <Box key="plan-act" flexDirection="row" gap={1} width={w}>
+              {chipEl}
+              <Box flexShrink={1}>
+                <Text dimColor wrap="truncate-end">
+                  {cut(doing, Math.max(10, w - chip.length - 4))}
+                </Text>
+              </Box>
+            </Box>
           ) : null}
         </Box>
       )

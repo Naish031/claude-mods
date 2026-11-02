@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 import { connectorName } from './connectors'
-import { describe } from './describe'
-import { scrub, shortModel, workTokens } from './lib'
+import { describe, describeMain } from './describe'
+import { openMode, scrub, shortModel, summaryOf, workTokens } from './lib'
 import { applyTaskTool, mergePlan, nowLine, readPlanFile, readTodos, readToolInput, toStatus } from './plan'
 
 /** The `on` a test body is handed. */
@@ -24,13 +24,17 @@ type Faults = { read?: boolean; write?: boolean; usage?: boolean; list?: boolean
 
 /** Answers every `$` call the mod makes, so a test sees only the mod: `files` stands in for the disk. */
 function rig(on: On, files: Files, faults: Faults = {}) {
-  const ids = ['agent-a1', 'agent-a2', 'agent-a3', 'agent-a4', 'agent-a5', 'agent-a6', 'agent-a7', 'agent-a8']
+  const ids = Array.from({ length: 16 }, (_, i) => `agent-a${i + 1}`)
   const agents: Agent[] = []
   const opened: string[] = []
   const closed: string[] = []
   const ran: string[][] = []
   const toasts: string[] = []
   const statuses: unknown[] = []
+  // A test holds a tool call open by naming its tool here; releasing the promise lets it finish.
+  const holds: Record<string, Promise<unknown>> = {}
+  // How often the mod looked at switches.json: it does so on every clock tick, so this shows a running timer.
+  const looks = { n: 0 }
 
   on('session.start', async (_$, e) => ({ cwd: e.cwd }) as never)
   on('session.id', async () => ({ value: 'sess1' }) as never)
@@ -76,8 +80,11 @@ function rig(on: On, files: Files, faults: Faults = {}) {
   on('tool.call', async (_$, e) => {
     // A TaskCreate answers with the new task's id, as the engine does.
     if ((e as { tool: string }).tool === 'TaskCreate') return { result: { task: { id: `task-${(taskN += 1)}`, subject: 'x' } } } as never
+    await holds[(e as { tool: string }).tool]
     return { result: 'ok' } as never
   })
+  // A model turn of the main chat begins.
+  on('turn.start', async (_$, e) => ({ turnId: (e as { turnId: string }).turnId }) as never)
   // Beneath the plugins a pane nobody draws is empty.
   on('ui.render', async ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -92,7 +99,10 @@ function rig(on: On, files: Files, faults: Faults = {}) {
     return { text } as never
   })
   on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'hello', scope: 'shared' }] }) as never)
-  on('fs.exists', async (_$, e) => ({ value: (e as { path: string }).path in files }) as never)
+  on('fs.exists', async (_$, e) => {
+    if ((e as { path: string }).path === SWITCHES) looks.n += 1
+    return { value: (e as { path: string }).path in files } as never
+  })
   on('fs.read', async (_$, e) => {
     if (faults.read) throw new Error('disk gone')
     const path = (e as { path: string }).path
@@ -110,7 +120,7 @@ function rig(on: On, files: Files, faults: Faults = {}) {
     if (argv[0] === 'rm') delete files[argv[argv.length - 1]!]
     return { value: { exitCode: 0, stdout: '', stderr: '' } } as never
   })
-  return { agents, opened, closed, ran, clock, toasts, statuses, files, submitted }
+  return { agents, opened, closed, ran, clock, toasts, statuses, files, submitted, holds, looks }
 }
 
 type Surface = 'desktop' | 'terminal'
@@ -176,7 +186,9 @@ for (const surface of ['desktop', 'terminal'] as const) {
     expect(await v.find({ text: /Gmail: search threads/ }), 'a Gmail connector in words').toBeDefined()
     expect(await v.find({ type: 'Text', text: /^Running · 2\s*$/ }), 'Running heading with its count').toBeDefined()
     expect((await v.find({ key: 'head-running' }))?.props.backgroundColor, 'Running sits in a themed box').toBe('success')
-    expect(await v.find({ text: /Explore · Haiku/ }), 'type and model').toBeDefined()
+    // The agent type is a tag beside the title, the model sits after it.
+    expect(await v.find({ type: 'Text', text: /^\s*Explore\s*$/ }), 'type as a tag').toBeDefined()
+    expect(await v.find({ type: 'Text', text: /^\s*Haiku\s*$/ }), 'model beside it').toBeDefined()
     expect(await v.find({ text: /^Time$/ }), 'time tile').toBeDefined()
     expect(await v.find({ type: 'Text', text: /^Total chat cost$/ }), 'cost label').toBeDefined()
     expect(await v.find({ text: /\$0\.42/ }), 'chat cost from the engine').toBeDefined()
@@ -325,10 +337,12 @@ for (const surface of ['desktop', 'terminal'] as const) {
     const v = await pane($, surface, 70)
     expect(await v.find({ type: 'Text', text: /^Finished · 7\s*$/ }), 'all seven counted').toBeDefined()
     expect(await v.find({ text: /Job number 7/ }), 'the newest shows').toBeDefined()
-    expect(await v.find({ text: /Job number 1$/ }), 'the oldest is held back').toBeUndefined()
+    // The Recent list names the last ten, so the held-back card is found by its key, not by its words.
+    expect(await v.find({ key: 'card-agent-a1' }), 'the oldest card is held back').toBeUndefined()
+    expect(await v.find({ key: 'card-agent-a7' }), 'the newest card shows').toBeDefined()
     expect((await v.find({ key: 'more-finished' }))?.text ?? '').toContain('Show 2 more')
     await v.press({ key: 'more-finished' })
-    expect(await v.find({ text: /Job number 1$/ }), 'Show more reveals it').toBeDefined()
+    expect(await v.find({ key: 'card-agent-a1' }), 'Show more reveals it').toBeDefined()
     expect((await v.find({ key: 'more-finished' }))?.text ?? '').toContain('Show fewer')
 
     await v.press({ key: 'clear' })
@@ -825,7 +839,8 @@ test('turn steps add the helper\'s model, effort and work tokens; a turn end rep
   for await (const _chunk of stream) void _chunk
   await clock.settle()
   const v = await pane($, 'desktop', 70)
-  expect(await v.find({ text: /Explore · Sonnet 5\.5 · high/ }), 'model and effort').toBeDefined()
+  expect(await v.find({ type: 'Text', text: /^\s*Explore\s*$/ }), 'type as a tag').toBeDefined()
+  expect(await v.find({ text: /Sonnet 5\.5 · high/ }), 'model and effort').toBeDefined()
   expect(await v.find({ text: /4k tokens/ }), 'tokens so far, cache reads left out').toBeDefined()
   await done($, 'agent-a1', { usage: { ...usage, input_tokens: 5000, output_tokens: 1000, cache_creation_input_tokens: 0 } })
   await clock.settle()
@@ -941,6 +956,646 @@ test('a finished plan restored after a reload stays hidden', { timeoutMs: 30000 
   await start($, 'desktop')
   await clock.settle()
   expect(await (await band($, 'desktop')).find({ key: 'plan-band' })).toBeUndefined()
+})
+
+// ---------- Version 0.2: the main card, open_pane, titles and tags, results, Recent, the bar chip ----------
+
+const turnStart = ($: any, extra: object = {}) => $.turn.start({ text: 'go', turnId: 'tm1', ...extra } as never)
+const mainDone = ($: any, extra: object = {}) =>
+  $.turn.complete({ answer: 'ok', reason: 'answer', durationMs: 1, isAborted: false, turnId: 'tm1', ...extra } as never)
+/** Every text of a drawing, joined, so a test asks "does the screen say this". */
+const said = async (v: View) => (await v.findAll({ type: 'Text' })).map(t => t.text).join(' | ')
+const countOf = (all: string, word: string) => all.split(word).length - 1
+/** A release for a held tool call, and the hold itself. */
+const hold = (holds: Record<string, Promise<unknown>>, tool: string) => {
+  let release = () => undefined as void
+  holds[tool] = new Promise<void>(r => {
+    release = () => r()
+  })
+  return release
+}
+/** A model request of the main chat, run to its end. */
+async function modelStep($: any) {
+  for await (const chunk of $.turn.step({ turnId: 'tm1', index: 0, model: 'claude-opus-5-5', messageCount: 2 } as never)) void chunk
+}
+const bareStep = (on: On) =>
+  on('turn.step', async function* () {
+    return { turnId: 'tm1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn', usage: { ...usage } } as never
+  })
+
+for (const surface of ['desktop', 'terminal'] as const) {
+  // ---------- The main chat's card ----------
+
+  test(`the main card is always there, and says Idle with nothing running (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    await clock.settle()
+    const v = await pane($, surface)
+    const all = await said(v)
+    expect(all, 'the card has its name').toContain('Claude (this chat)')
+    expect(all, 'a state word, not just a colour').toContain('Idle')
+    expect(all, 'the empty state in plain words').toContain('Nothing running. Claude is idle.')
+    expect(all, 'the helpers heading still says there are none').toContain('No subagents yet')
+    expect(await v.find({ type: 'Svg', alt: 'Claude is working' }), 'no live dot while idle').toBeUndefined()
+    expect(all, 'idle has no live word').not.toContain('Working')
+  })
+
+  test(`the main card follows a turn: what it acts on, the state, the time, the tools, the last steps, then Idle (${surface})`, { timeoutMs: 60000 }, async ($, on) => {
+    const { clock, holds } = rig(on, {})
+    bareStep(on)
+    await start($, surface)
+    const call = callTool($)
+    await turnStart($)
+    await modelStep($)
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    let all = await said(v)
+    expect(all, 'working').toContain('Working')
+    expect(all, 'between tools it thinks').toContain('Thinking')
+    expect(all, 'not idle while it works').not.toContain('Nothing running')
+
+    // A tool call that is still running is the live line, with its folder dim beside it.
+    const release = hold(holds, 'Read')
+    const reading = call({ tool: 'Read', tool_use_id: 'm1', file_path: '/Users/test/vault/hooks/register.tsx' })
+    await clock.advance(65_000)
+    all = await said(v)
+    expect(all, 'what it reads').toContain('Reading register.tsx')
+    expect(all, 'its folder, home as ~').toContain('~/vault/hooks')
+    expect(all, 'elapsed time of the turn, live').toContain('1:05')
+    expect(all, 'tools used this turn').toContain('1 tool this turn')
+    if (surface === 'desktop') {
+      const dot = await v.find({ type: 'Svg', alt: 'Claude is working' })
+      expect(dot, 'a live dot on the desktop').toBeDefined()
+      expect(String(dot!.props.source), 'the ring pulses').toContain('@keyframes rg')
+      expect(String(dot!.props.source), 'and stops for a person who asks for less motion').toContain('prefers-reduced-motion')
+    } else {
+      expect(await v.findAll({ type: 'Svg' }), 'no Svg on the terminal').toHaveLength(0)
+    }
+    release()
+    await reading
+    await clock.settle()
+    all = await said(v)
+    expect(all, 'finished steps are listed with a tick').toContain('✓ Reading register.tsx')
+    expect(all, 'and Claude is back to thinking').toContain('Thinking')
+
+    // Other tool calls read in plain words, the chat's own to-do and plan tools too.
+    await call({ tool: 'Bash', tool_use_id: 'm2', command: 'npm test', description: 'Run the tests' })
+    await call({ tool: 'Edit', tool_use_id: 'm3', file_path: '/Users/test/vault/theme.liquid', old_string: 'a', new_string: 'b' })
+    await call({ tool: 'TodoWrite', tool_use_id: 'm4', todos: todos3 })
+    await call({ tool: 'Agent', tool_use_id: 'm5', description: 'Count mod files', prompt: 'x', subagent_type: 'Explore' })
+    await clock.settle()
+    all = await said(v)
+    expect(all).toContain('✓ Running: Run the tests')
+    expect(all).toContain('✓ Editing theme.liquid')
+    expect(all).toContain('✓ Updating the to-do list')
+    expect(all).toContain('✓ Running a helper: Count mod files')
+    expect(all, 'tools counted').toContain('5 tools this turn')
+
+    // The turn ends: Idle, with the turn's length and tool count kept.
+    await clock.advance(5_000)
+    await mainDone($)
+    await clock.settle()
+    all = await said(v)
+    expect(all, 'idle').toContain('Idle')
+    expect(all, 'no longer working').not.toContain('Working')
+    expect(all, 'the last turn is summed up').toMatch(/Last turn 1:1\d · 5 tools/)
+    expect(all, 'the last steps stay on the card').toContain('✓ Editing theme.liquid')
+    expect(await v.find({ type: 'Svg', alt: 'Claude is working' }), 'the dot is gone').toBeUndefined()
+  })
+
+  test(`the main card says Waiting for you while a question is open (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock, holds } = rig(on, {})
+    await start($, surface)
+    await turnStart($)
+    const release = hold(holds, 'AskUserQuestion')
+    const asking = callTool($)({ tool: 'AskUserQuestion', tool_use_id: 'q1', questions: [] })
+    await clock.advance(1_000)
+    const v = await pane($, surface, 70)
+    let all = await said(v)
+    expect(all, 'waiting, in words').toContain('Waiting for you')
+    expect(all, 'and what for').toContain('Asking you a question')
+    expect(all, 'not called working').not.toContain('Working')
+    release()
+    await asking
+    await clock.settle()
+    all = await said(v)
+    expect(all, 'back to work').toContain('Working')
+    expect(all).not.toContain('Waiting for you')
+    // A plan to approve is a wait too.
+    const release2 = hold(holds, 'ExitPlanMode')
+    const planning = callTool($)({ tool: 'ExitPlanMode', tool_use_id: 'q2', plan: 'x' })
+    await clock.advance(1_000)
+    expect(await said(v), 'a plan waits for you').toContain('Asking you to approve the plan')
+    release2()
+    await planning
+  })
+
+  test(`the main card keeps the last five steps and counts them all, however many there are (${surface})`, { timeoutMs: 60000 }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    await turnStart($)
+    const call = callTool($)
+    for (let i = 1; i <= 30; i += 1) await call({ tool: 'Read', tool_use_id: `r${i}`, file_path: `/Users/test/vault/f${i}.md` })
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    const all = await said(v)
+    expect(all, 'all thirty counted').toContain('30 tools this turn')
+    for (const n of [26, 27, 28, 29, 30]) expect(all, `step ${n} shows`).toContain(`✓ Reading f${n}.md`)
+    expect(all, 'older steps are dropped').not.toContain('Reading f25.md')
+    expect(countOf(all, '✓ Reading'), 'five rows').toBe(5)
+  })
+
+  test(`the main card hides secrets in a command, as a helper's card does (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock, holds, files } = rig(on, {})
+    await start($, surface)
+    await turnStart($)
+    const release = hold(holds, 'Bash')
+    const running = callTool($)({
+      tool: 'Bash',
+      tool_use_id: 'b1',
+      command: 'curl -H "Authorization: Bearer abcdefghijklmnop" https://x.dev?api_key=hunter22 sk-ABCDEFGHIJKLMNOP12',
+    })
+    await clock.advance(1_000)
+    const v = await pane($, surface, 90)
+    const all = await said(v)
+    expect(all, 'it shows the command').toContain('Running: curl')
+    for (const secret of ['abcdefghijklmnop', 'hunter22', 'ABCDEFGHIJKLMNOP']) expect(all, secret).not.toContain(secret)
+    release()
+    await running
+    // A model-written description with a token in it is cleaned too.
+    await callTool($)({ tool: 'Bash', tool_use_id: 'b2', command: 'x', description: 'Deploy with token=SECRETVALUE123' })
+    await clock.settle()
+    expect(await said(v)).not.toContain('SECRETVALUE123')
+    expect(files[LOG] ?? '', 'and nothing of it reaches the log').not.toContain('SECRET')
+  })
+
+  test(`each turn counts from zero, and a tool that ends after its turn does not wake the card (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock, holds } = rig(on, {})
+    await start($, surface)
+    const call = callTool($)
+    await turnStart($)
+    await call({ tool: 'Read', tool_use_id: 'a1', file_path: '/Users/test/vault/a.md' })
+    await call({ tool: 'Read', tool_use_id: 'a2', file_path: '/Users/test/vault/b.md' })
+    await mainDone($)
+    await turnStart($, { turnId: 'tm2' })
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    expect(await said(v), 'a new turn starts at zero').toContain('0 tools this turn')
+
+    const release = hold(holds, 'Grep')
+    const late = call({ tool: 'Grep', tool_use_id: 'a3', pattern: 'x' })
+    await clock.advance(500)
+    await mainDone($, { turnId: 'tm2' })
+    await clock.settle()
+    release()
+    await late
+    await clock.settle()
+    const all = await said(v)
+    expect(all, 'still idle after a late tool end').toContain('Idle')
+    expect(all).not.toContain('Working')
+  })
+
+  test(`a /clear and the switch-off both put the main card back to idle (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const files: Files = {}
+    const { clock, holds } = rig(on, files)
+    await start($, surface)
+    await turnStart($)
+    await callTool($)({ tool: 'Read', tool_use_id: 'a1', file_path: '/Users/test/vault/a.md' })
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    expect(await said(v)).toContain('Working')
+    await $.session.end({ reason: 'clear', sessionId: 'sess1', resume: {} } as never)
+    await clock.settle()
+    let all = await said(v)
+    expect(all, 'idle after /clear').toContain('Idle')
+    expect(all, 'with nothing left of the old turn').not.toContain('Reading a.md')
+    expect(all).not.toContain('tool')
+    expect(all, 'the empty desk again').toContain('Nothing running. Claude is idle.')
+
+    // Switched off: nothing is tracked or drawn, and calls pass through untouched.
+    await start($, surface)
+    await turnStart($, { turnId: 'tm3' })
+    await callTool($)({ tool: 'Read', tool_use_id: 'a2', file_path: '/Users/test/vault/b.md' })
+    await clock.settle()
+    expect(await said(v), 'working again').toContain('Reading b.md')
+    files[SWITCHES] = JSON.stringify({ 'helper-desk': false })
+    await clock.advance(3_100)
+    expect(await v.find({ text: /Claude \(this chat\)/ }), 'no card while off').toBeUndefined()
+    const release = hold(holds, 'Bash')
+    const off = callTool($)({ tool: 'Bash', tool_use_id: 'b1', command: 'ls' })
+    await clock.advance(100)
+    release()
+    const r = await off
+    expect(r.result, 'the tool ran').toBe('ok')
+    expect(r.context ?? [], 'with no reminder').toHaveLength(0)
+    await mainDone($, { turnId: 'tm3' })
+    files[SWITCHES] = '{}'
+    // With nothing running there is no timer: the next prompt or tool call notices the switch.
+    await clock.advance(3_100)
+    await $.prompt.submit({ text: 'and on again' } as never).catch(() => undefined)
+    await clock.settle()
+    all = await said(v)
+    expect(all, 'on again, the card starts from idle').toContain('Idle')
+    expect(all, 'and does not remember the step from before').not.toContain('Reading b.md')
+  })
+
+  test(`no timer runs when nothing is running, and the clock runs while the main chat works (${surface})`, { timeoutMs: 60000 }, async ($, on) => {
+    const { clock, looks } = rig(on, {})
+    await start($, surface)
+    await spawn($, 'Short job', 1)
+    await clock.settle()
+    await done($, 'agent-a1')
+    await clock.advance(5_000)
+    const quiet = looks.n
+    await clock.advance(10_000)
+    expect(looks.n, 'idle: no timer looks at anything').toBe(quiet)
+
+    await turnStart($)
+    await clock.advance(5_000)
+    expect(looks.n > quiet, 'the main chat is working: the clock runs').toBe(true)
+    await mainDone($)
+    await clock.settle()
+    const after = looks.n
+    await clock.advance(10_000)
+    expect(looks.n, 'the turn is over: the clock stops').toBe(after)
+  })
+
+  test(`with animations off the main card is still: a glyph, not a pulse (${surface})`, { timeoutMs: 30000, options: { animations: false } }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    await turnStart($)
+    await clock.settle()
+    const v = await pane($, surface)
+    expect(await said(v), 'still working, in words').toContain('Working')
+    expect(await v.find({ type: 'Svg', alt: 'Claude is working' }), 'no pulsing picture').toBeUndefined()
+    const before = (await said(v)).replace(/\d+:\d\d/g, '')
+    await clock.advance(2_100)
+    expect((await said(v)).replace(/\d+:\d\d/g, ''), 'nothing moves but the clock').toBe(before)
+  })
+
+  // ---------- open_pane ----------
+
+  test(`open_pane "with a task or helper" (the default) opens at the first plan, once per chat (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await clock.settle()
+    expect(opened, 'nothing yet').toHaveLength(0)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(0, true) })
+    await clock.settle()
+    expect(opened, 'the first plan opens it').toEqual(['helpers'])
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p2', steps: steps4(1, true) })
+    await spawn($, 'A helper', 1)
+    await clock.settle()
+    expect(opened, 'once per chat').toHaveLength(1)
+  })
+
+  test(`a to-do list from TodoWrite opens the pane too (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await callTool($)({ tool: 'TodoWrite', tool_use_id: 't1', todos: todos3 })
+    await clock.settle()
+    expect(opened).toEqual(['helpers'])
+  })
+
+  test(`the pane opens by itself once per chat, so one the person closed stays closed; /helpers brings it back (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await spawn($, 'First helper', 1)
+    await clock.settle()
+    expect(opened).toHaveLength(1)
+    // The person closes the pane (the mod is not asked): more helpers and plans do not open it again.
+    await done($, 'agent-a1')
+    await spawn($, 'Second helper', 2)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(0, true) })
+    await clock.settle()
+    expect(opened, 'not asked again').toHaveLength(1)
+    await $.command.run({ command: 'helpers', args: '' } as never)
+    expect(opened, '/helpers opens it').toHaveLength(2)
+    // A /clear is a new chat: the pane may open by itself again.
+    await $.session.end({ reason: 'clear', sessionId: 'sess1', resume: {} } as never)
+    await start($, surface)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p2', steps: steps4(0, true) })
+    await clock.settle()
+    expect(opened, 'a new chat opens it again').toHaveLength(3)
+  })
+
+  test(`open_pane "with helpers only" ignores plans and opens with a helper (${surface})`, { timeoutMs: 30000, options: { open_pane: 'with helpers only' } }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(0, true) })
+    await clock.settle()
+    expect(opened, 'a plan does not open it').toHaveLength(0)
+    await spawn($, 'A helper', 1)
+    await clock.settle()
+    expect(opened, 'a helper does').toEqual(['helpers'])
+  })
+
+  test(`open_pane "never" opens nothing, the old switch set to off says never too, /helpers still works (${surface})`, { timeoutMs: 30000, options: { open_pane: 'never' } }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(0, true) })
+    await spawn($, 'A helper', 1)
+    await clock.settle()
+    expect(opened).toHaveLength(0)
+    await $.command.run({ command: 'helpers', args: '' } as never)
+    expect(opened, '/helpers still opens it').toEqual(['helpers'])
+  })
+
+  test(`the old auto_open_pane switch still counts: off means never, even beside the new picker (${surface})`, { timeoutMs: 30000, options: { auto_open_pane: false, open_pane: 'with a task or helper' } }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(0, true) })
+    await spawn($, 'A helper', 1)
+    await clock.settle()
+    expect(opened).toHaveLength(0)
+  })
+
+  test(`the old auto_open_pane switch set to on changes nothing (${surface})`, { timeoutMs: 30000, options: { auto_open_pane: true } }, async ($, on) => {
+    const { opened, clock } = rig(on, {})
+    await start($, surface)
+    await spawn($, 'A helper', 1)
+    await clock.settle()
+    expect(opened).toEqual(['helpers'])
+  })
+
+  test(`a pane that could not open is tried again with the next helper (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { opened, clock } = rig(on, {}, { open: true })
+    await start($, surface)
+    await spawn($, 'A helper', 1)
+    await spawn($, 'Another helper', 2)
+    await clock.settle()
+    expect(opened, 'no room, nothing opened, nothing broke').toHaveLength(0)
+    expect(await (await pane($, surface)).find({ text: /A helper/ }), 'the card still draws').toBeDefined()
+  })
+
+  // ---------- Helper cards: title, tag, result, duration ----------
+
+  test(`a helper's own description is the title and its agent type a tag (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    await spawn($, 'Count mod files', 1, 'Explore', 'haiku')
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    const title = await v.find({ type: 'Text', text: /^Count mod files$/ })
+    expect(title, 'the description is the title').toBeDefined()
+    expect(title!.props.bold, 'in bold').toBe(true)
+    expect(String(title!.text), 'with no type in it').not.toContain('Explore')
+    const tag = await v.find({ type: 'Text', text: /^\s*Explore\s*$/ })
+    expect(tag, 'the type is a tag').toBeDefined()
+    expect(tag!.props.backgroundColor, 'a chip with its own background').toBeTruthy()
+    expect(tag!.props.bold, 'lighter than the title').not.toBe(true)
+    expect(await said(v), 'and the state is a word').toContain('Working')
+  })
+
+  test(`a finished card shows the first line of the result, how long it took, and a state word (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const files: Files = {}
+    const { clock } = rig(on, files)
+    await start($, surface)
+    await spawn($, 'Count mod files', 1, 'Explore')
+    await spawn($, 'Check the keys', 2)
+    await spawn($, 'Write a long note', 3)
+    await spawn($, 'Fail at it', 4)
+    await clock.settle()
+    await clock.advance(7_000)
+    await done($, 'agent-a1', { answer: '## Found 12 mod files in 3 folders.\nSecond line that stays out.' })
+    await done($, 'agent-a2', { answer: '\n\n**Used** token=abc123 and sk-ABCDEFGHIJKLMNOP12 to read it' })
+    await done($, 'agent-a3', { answer: `${'x'.repeat(400)} tail` })
+    await done($, 'agent-a4', { reason: 'error', answer: 'Half an answer' })
+    await clock.settle()
+    const v = await pane($, surface, 90)
+    const all = await said(v)
+    expect(all, 'first line of the result, markdown marks gone').toContain('Found 12 mod files in 3 folders.')
+    expect(all, 'not the second line').not.toContain('Second line')
+    expect(all, 'how long it took').toContain('took 0:07')
+    expect(all, 'a state word on a finished card').toContain('Done')
+    expect(all, 'secrets are hidden').toContain('••••')
+    for (const secret of ['abc123', 'ABCDEFGHIJKLMNOP']) expect(all, secret).not.toContain(secret)
+    const longest = Math.max(...(await v.findAll({ type: 'Text', text: /^x+/ })).map(t => String(t.text).length))
+    expect(longest <= 160, 'a long line is clipped').toBe(true)
+    expect(all, 'a stopped card says why, not what it half said').toContain('It hit an error')
+    expect(all, 'and shows no result').not.toContain('Half an answer')
+    // The result is on screen only.
+    expect(files[LOG] ?? '', 'never in the log').not.toContain('mod files')
+    expect(files[LOG] ?? '').not.toContain('xxxx')
+  })
+
+  test(`a helper that picks up new work loses its old result (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    await spawn($, 'Teammate job', 1)
+    await clock.settle()
+    await done($, 'agent-a1', { answer: 'Old result line' })
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    expect(await said(v)).toContain('Old result line')
+    await callTool($)({ tool: 'Read', tool_use_id: 'c1', file_path: '/x/y.md', agentId: 'agent-a1' })
+    await clock.settle()
+    expect(await said(v), 'working again, no stale result').not.toContain('Old result line')
+  })
+
+  // ---------- Recent ----------
+
+  test(`Recent keeps the last ten helpers that ended, newest first; Clear finished empties it (${surface})`, { timeoutMs: 60000 }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    for (let i = 1; i <= 12; i += 1) await spawn($, `Recent job ${i}`, i, i === 12 ? 'Plan' : 'Explore')
+    await clock.settle()
+    for (let i = 1; i <= 11; i += 1) {
+      await clock.advance(10)
+      await done($, `agent-a${i}`, { answer: `Result of job ${i}` })
+    }
+    // The twelfth ends badly: stopped helpers are in Recent too.
+    await clock.advance(10)
+    await done($, 'agent-a12', { reason: 'aborted', isAborted: true })
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    expect(await v.find({ type: 'Text', text: /^Recent · 10\s*$/ }), 'ten, not twelve').toBeDefined()
+    const rows = (await v.findAll({ type: 'Box' })).map(b => String(b.props.key ?? '')).filter(k => k.startsWith('recent-'))
+    expect(rows, 'ten rows, the newest first').toEqual(Array.from({ length: 10 }, (_, i) => `recent-agent-a${12 - i}`))
+    expect(await v.find({ key: 'recent-agent-a2' }), 'the oldest two have left the list').toBeUndefined()
+    const all = await said(v)
+    expect(all, 'each row has its result').toContain('Done · Result of job 11')
+    expect(all, 'a stopped one says why').toContain('You stopped it')
+    expect(await v.find({ type: 'Text', text: /^Finished · 11\s*$/ }), 'the Finished group still keeps every card').toBeDefined()
+
+    // Folding the group hides its rows.
+    await v.press({ key: 'group-recent' })
+    expect(await v.find({ key: 'recent-agent-a12' }), 'folded').toBeUndefined()
+    await v.press({ key: 'group-recent' })
+    await v.press({ key: 'clear' })
+    await clock.settle()
+    expect(await v.find({ key: 'head-recent' }), 'Clear finished empties Recent').toBeUndefined()
+    expect(await v.find({ key: 'recent-agent-a12' })).toBeUndefined()
+  })
+
+  test(`a running helper is not in Recent (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock } = rig(on, {})
+    await start($, surface)
+    await spawn($, 'Still going', 1)
+    await clock.settle()
+    const v = await pane($, surface, 70)
+    expect(await v.find({ key: 'head-recent' }), 'no Recent group with nothing finished').toBeUndefined()
+  })
+
+  // ---------- The task bar ----------
+
+  test(`the task bar says how many helpers work and what the newest one does, then what Claude does (${surface})`, { timeoutMs: 60000 }, async ($, on) => {
+    const { clock, holds } = rig(on, {})
+    await start($, surface)
+    const call = callTool($)
+    await call({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', title: 'Make the deck', steps: steps4(1, true) })
+    await clock.settle()
+    const b = await band($, surface, 100)
+    expect(await said(b), 'nothing running: no chip').not.toContain('working')
+
+    await spawn($, 'Read the notes', 1, 'Explore')
+    await spawn($, 'Build the slides', 2)
+    await clock.settle()
+    await call({ tool: 'Read', tool_use_id: 'c1', file_path: '/Users/test/vault/notes.md', agentId: 'agent-a1' })
+    await call({ tool: 'Write', tool_use_id: 'c2', file_path: '/Users/test/vault/deck.md', content: 'x', agentId: 'agent-a2' })
+    await clock.settle()
+    let all = await said(b)
+    expect(await b.find({ type: 'Text', text: /2 helpers working/ }), 'the chip').toBeDefined()
+    expect(all, 'the newest helper and its live line').toContain('Build the slides · Writing deck.md')
+    expect(all, 'the plan step is still there').toContain('Now: Draft the outline')
+    expect(all, 'the percentage is still there').toContain('25%')
+
+    await done($, 'agent-a2')
+    await clock.settle()
+    expect(await b.find({ type: 'Text', text: /1 helper working/ }), 'one helper, singular').toBeDefined()
+    expect(await said(b), 'the live line is the other helper now').toContain('Read the notes · Reading notes.md')
+    await done($, 'agent-a1')
+    await clock.settle()
+    expect(await said(b), 'no helpers: no chip').not.toContain('helper working')
+
+    // No helpers: the bar shows Claude's own live line.
+    await turnStart($)
+    const release = hold(holds, 'Bash')
+    const running = call({ tool: 'Bash', tool_use_id: 'm1', command: 'npm test' })
+    await clock.advance(500)
+    all = await said(b)
+    expect(all, "Claude's own line").toContain('Claude · Running: npm test')
+    expect(all, 'no chip for Claude alone').not.toContain('working')
+    release()
+    await running
+    await mainDone($)
+    await clock.settle()
+    expect(await said(b), 'idle: the bar is just the bar').not.toContain('Claude ·')
+  })
+
+  test(`the bar says when Claude waits for you (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock, holds } = rig(on, {})
+    await start($, surface)
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(1, true) })
+    await turnStart($)
+    const release = hold(holds, 'AskUserQuestion')
+    const asking = callTool($)({ tool: 'AskUserQuestion', tool_use_id: 'q1', questions: [] })
+    await clock.advance(500)
+    expect(await said(await band($, surface, 100)), 'waiting is on the bar').toContain('Claude · waiting for you · Asking you a question')
+    release()
+    await asking
+  })
+
+  test(`the bar draws no activity line with no plan, hidden, or switched off (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const files: Files = {}
+    const { clock } = rig(on, files)
+    await start($, surface)
+    await turnStart($)
+    await spawn($, 'A helper', 1)
+    await clock.settle()
+    const b = await band($, surface, 100)
+    expect(await b.find({ key: 'plan-band' }), 'no plan, no band').toBeUndefined()
+    await callTool($)({ tool: 'mcp__helper-desk__plan', tool_use_id: 'p1', steps: steps4(1, true) })
+    await clock.settle()
+    expect(await said(b)).toContain('1 helper working')
+    files[SWITCHES] = JSON.stringify({ 'helper-desk': false })
+    await clock.advance(3_100)
+    expect(await b.find({ key: 'plan-band' }), 'off: nothing').toBeUndefined()
+  })
+
+  // ---------- Fail open ----------
+
+  test(`a broken disk, ledger, list and pane never block the main chat's calls, and the card still draws (${surface})`, { timeoutMs: 30000 }, async ($, on) => {
+    const { clock, submitted } = rig(on, {}, { read: true, write: true, usage: true, list: true, open: true })
+    await start($, surface)
+    await turnStart($)
+    const r = await callTool($)({ tool: 'Bash', tool_use_id: 'b1', command: 'ls' })
+    expect(r.result, 'the call ran').toBe('ok')
+    expect(r.deny, 'and was not refused').toBeUndefined()
+    await $.prompt.submit({ text: 'Keep this text exactly' } as never)
+    expect(submitted, 'the prompt is untouched').toEqual(['Keep this text exactly'])
+    await mainDone($)
+    await clock.settle()
+    const all = await said(await pane($, surface))
+    expect(all, 'the card still draws').toContain('Claude (this chat)')
+    expect(all, 'with the step it saw').toContain('Running: ls')
+  })
+}
+
+test('the main card cannot be woken by a tool when there is no home folder and no clock luck', { timeoutMs: 30000 }, async ($, on) => {
+  const { clock } = rig(on, {}, { env: true })
+  await start($, 'desktop')
+  await turnStart($)
+  const r = await callTool($)({ tool: 'Read', tool_use_id: 'a1', file_path: '/Users/test/a.md' })
+  expect(r.result).toBe('ok')
+  await clock.settle()
+  expect(await said(await pane($, 'desktop')), 'drawn without a home folder').toContain('Reading a.md')
+})
+
+test('the log never holds a path, a command or a result from the main chat', { timeoutMs: 30000 }, async ($, on) => {
+  const files: Files = {}
+  const { clock } = rig(on, files)
+  await start($, 'desktop')
+  await turnStart($)
+  await callTool($)({ tool: 'Read', tool_use_id: 'a1', file_path: '/Users/test/SECRET-PATH/secret-file.md' })
+  await callTool($)({ tool: 'Bash', tool_use_id: 'a2', command: 'echo SECRET-COMMAND' })
+  await spawn($, 'SECRET-TASK', 1)
+  await done($, 'agent-a1', { answer: 'SECRET-RESULT' })
+  await mainDone($)
+  await clock.settle()
+  const log = files[LOG] ?? ''
+  expect(log, 'a log was written').toContain('helper started')
+  expect(log.toUpperCase()).not.toContain('SECRET')
+})
+
+// ---------- Pure parts of 0.2 ----------
+
+test('a result summary is the first line with words in it, clean and short', async () => {
+  expect(summaryOf('## Found 12 files\nmore')).toBe('Found 12 files')
+  expect(summaryOf('\n\n---\n```\n**Bold** start')).toBe('Bold start')
+  expect(summaryOf('- a list item\n- another')).toBe('a list item')
+  expect(summaryOf('> quoted')).toBe('quoted')
+  expect(summaryOf('')).toBe('')
+  expect(summaryOf(undefined)).toBe('')
+  expect(summaryOf('***\n---')).toBe('')
+  expect(summaryOf('my_token=abcdefgh and TOKEN=xyz12345')).not.toContain('xyz12345')
+  expect(summaryOf('x'.repeat(500)).length).toBe(160)
+  expect(summaryOf('x'.repeat(500), 40).length).toBe(40)
+  expect(summaryOf('Gebäude gezählt: 12')).toBe('Gebäude gezählt: 12')
+})
+
+test('open_pane reads the picker, and an old switch set to off wins', async () => {
+  expect(openMode(undefined, undefined)).toBe('with a task or helper')
+  expect(openMode('with helpers only', undefined)).toBe('with helpers only')
+  expect(openMode('never', undefined)).toBe('never')
+  expect(openMode('nonsense', undefined), 'an odd value falls back to the default').toBe('with a task or helper')
+  expect(openMode(undefined, false), 'old off').toBe('never')
+  expect(openMode('with helpers only', false), 'old off beats the picker').toBe('never')
+  expect(openMode('never', true), 'old on changes nothing').toBe('never')
+  expect(openMode(undefined, true)).toBe('with a task or helper')
+})
+
+test('the main chat\'s tool calls read in plain words', async () => {
+  const plan = 'mcp__helper-desk__plan'
+  expect(describeMain(plan, {}, HOME, plan).live).toBe('Updating the plan')
+  expect(describeMain('TodoWrite', {}, HOME, plan).live).toBe('Updating the to-do list')
+  expect(describeMain('Agent', { description: 'Count mod files' }, HOME, plan).live).toBe('Running a helper: Count mod files')
+  expect(describeMain('Agent', {}, HOME, plan).live).toBe('Running a helper')
+  expect(describeMain('AskUserQuestion', {}, HOME, plan).live).toBe('Asking you a question')
+  expect(describeMain('ExitPlanMode', {}, HOME, plan).live).toBe('Asking you to approve the plan')
+  expect(describeMain('Read', { file_path: '/Users/test/a/b.md' }, HOME, plan), 'anything else reads as for a helper').toEqual(describe('Read', { file_path: '/Users/test/a/b.md' }, HOME))
+  expect(describeMain('Bash', { command: 'run --token=hunter22abc' }, HOME, plan).live).not.toContain('hunter22abc')
+  expect(describe('Bash', { command: 'x', description: 'Use password=hunter22abc' }, HOME).label, 'a description is cleaned too').not.toContain('hunter22abc')
 })
 
 // ---------- Pure parts ----------

@@ -1,28 +1,42 @@
 {
   "name": "helper-desk",
-  "version": "0.1.0",
-  "description": "A purple task bar above the prompt that fills as Claude ticks off its to-do list, plus a side pane with one live card and one progress bar per subagent.",
-  "author": { "name": "Naish Abbas" },
+  "version": "0.2.0",
+  "description": "A side pane that shows Claude working: a live card for this chat (what it is doing right now), a card for every helper (subagent) with its result, and a short Recent list. Plus a purple task bar above the prompt that fills as Claude ticks off its to-do list and says what is running.",
+  "author": {
+    "name": "Naish Abbas"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "bar_color": {
       "type": "string",
       "title": "Task bar colour",
       "description": "The colour of the task bar above the prompt.",
-      "options": ["purple", "blue", "teal", "green", "orange", "pink"],
+      "options": [
+        "purple",
+        "blue",
+        "teal",
+        "green",
+        "orange",
+        "pink"
+      ],
       "default": "purple"
     },
     "animations": {
       "type": "boolean",
       "title": "Animations",
-      "description": "Moving sparkles, the running crab and the shimmer. Turn off for a still screen and less work for the computer.",
+      "description": "Moving sparkles, the running crab, the live dot and the shimmer. Turn off for a still screen and less work for the computer.",
       "default": true
     },
-    "auto_open_pane": {
-      "type": "boolean",
+    "open_pane": {
+      "type": "string",
       "title": "Open the side pane by itself",
-      "description": "Open the Helper Desk pane when Claude starts its first subagent. You can always type /helpers.",
-      "default": true
+      "description": "When the Helper Desk pane opens on its own, once per chat. Closing or hiding it keeps it shut for that chat. You can always type /helpers.",
+      "options": [
+        "with a task or helper",
+        "with helpers only",
+        "never"
+      ],
+      "default": "with a task or helper"
     },
     "nudges": {
       "type": "boolean",

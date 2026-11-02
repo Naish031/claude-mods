@@ -25,6 +25,8 @@ export type Helper = {
   phase: HelperPhase
   /** Why it stopped, in plain words, when it did not finish well. Empty otherwise. */
   note: string
+  /** The first line of its final message, secrets hidden and clipped. Empty when it gave none. */
+  result: string
   /** Clock time it started and, once over, when it ended. */
   startedAt: number
   endedAt: number
@@ -42,6 +44,27 @@ export type Helper = {
   seat: number
   /** Which of the 8 body colours its crab wears. */
   hue: number
+}
+
+/** What the main chat is doing: working, waiting for the person, or idle between turns. */
+export type MainState = 'idle' | 'working' | 'waiting'
+
+/** The main chat as the pane's first card draws it. It has no agent id, so it is its own record. */
+export type MainView = {
+  state: MainState
+  /** The live line in plain words: "Reading register.tsx", "Thinking", "Asking you a question". */
+  line: string
+  /** Dim text after the live line: a file's folder. Empty when there is none. */
+  dim: string
+  /** True while a tool call is running; the last step is then the live one. */
+  running: boolean
+  /** Clock time the current (or last) turn started, and when it ended; 0 while it runs. */
+  startedAt: number
+  endedAt: number
+  /** Tool calls so far this turn (the last turn's, once idle). */
+  count: number
+  /** The last few steps of the turn, oldest first. */
+  steps: Step[]
 }
 
 export type PlanStatus = 'pending' | 'in_progress' | 'completed'
@@ -84,6 +107,10 @@ declare module 'claude-code' {
       plan: Shaped<PlanView | null>
       /** Shimmer tick for the step in progress; it counts only while one is in progress. */
       shimmer: number
+      /** The main chat's live card. */
+      main: Shaped<MainView>
+      /** True once the pane has opened by itself in this chat, so it does not open again. */
+      opened: boolean
     }
   }
 }
