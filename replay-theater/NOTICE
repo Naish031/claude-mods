@@ -1,0 +1,31 @@
+Replay Theater
+Copyright 2026 Naish Abbas (the changes listed below)
+
+This product includes software developed by Claude Code DevRel at Anthropic,
+"Replay Theater", Copyright 2026 Anthropic PBC, from
+https://github.com/anthropics/claude-code-playground
+(claude-code/mods/replay-theater), licensed under the Apache License, Version 2.0.
+A copy of the License is in the LICENSE file of this folder.
+
+A third-party copy of that sample added support for a mods switchboard. That code is
+not used here: this version has its own switch support, written from scratch.
+
+This version is a modified version of the original. The changes:
+  1. Edits are recorded after they ran, from the tool's own result, not at call time.
+  2. The diff has the file's line numbers and context lines.
+  3. Nothing is read from disk to record an edit.
+  4. A Myers line diff replaces the 400-line LCS table.
+  5. The 12-line cap per step is replaced by a scrolling window.
+  6. Any of the last turns can be replayed, not only the last.
+  7. New views (file view, file list, summary header, side by side, jump to a file).
+  8. A filter by file, and copy or save of a patch.
+  9. Syntax colours through the engine's diff drawing, following the person's theme.
+ 10. Shopify file names, and folded diffs for minified, generated and very large changes.
+ 11. NotebookEdit, and Bash rm, mv, git rm and git mv, binary files, writes held for review.
+ 12. The step strip is cut around the current step when there are many steps.
+ 13. State is kept in $.state, and survives a reload of the mod.
+ 14. Switch file in ~/.claude/claude-mods/, read at event time, with no timer.
+ 15. A log file, a settings screen, and more /replay words.
+ 16. TypeScript and JSX in several modules, with tests, instead of one .mjs file.
+
+Each source file that derives from the original says so in its header.

@@ -1,0 +1,64 @@
+{
+  "name": "handoff",
+  "version": "0.1.0",
+  "description": "When a chat gets very long, writes a handoff of the whole chat (what was asked, what is done, files to open, next steps), shows the steps with progress bars, then copies it or starts a fresh chat with it. Works at a token limit you choose, or any time with /handoff.",
+  "author": { "name": "Naish Abbas" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "auto_offer": {
+      "type": "boolean",
+      "title": "Offer a handoff automatically",
+      "description": "Show the Refresh offer when the chat gets long. Turn off to only use /handoff and /refresh.",
+      "default": true
+    },
+    "offer_at_tokens": {
+      "type": "number",
+      "title": "Offer at (tokens)",
+      "description": "Offer a handoff when the chat holds this many tokens. It is capped at 80% of the model's window, so it still shows on a smaller window.",
+      "default": 250000
+    },
+    "snooze_tokens": {
+      "type": "number",
+      "title": "Ask again after (tokens)",
+      "description": "After you press Not now or Close, ask again once the chat has grown by this many tokens.",
+      "default": 100000
+    },
+    "max_words": {
+      "type": "number",
+      "title": "Handoff length (words)",
+      "description": "The most words the handoff should have.",
+      "default": 1500
+    },
+    "extra_instructions": {
+      "type": "string",
+      "title": "Extra rules for every handoff",
+      "description": "Optional. One or two sentences added to every handoff request, for example: Always name the Shopify store and the theme branch.",
+      "default": ""
+    },
+    "save_folder": {
+      "type": "string",
+      "title": "Save handoffs in",
+      "description": "Folder for saved handoffs. Leave empty to use ~/.claude/handoffs.",
+      "default": ""
+    },
+    "new_chat_in_same_folder": {
+      "type": "boolean",
+      "title": "New chat opens in the same folder",
+      "description": "When Start new chat uses the Claude app link, open it in this chat's folder.",
+      "default": true
+    },
+    "use_pet": {
+      "type": "boolean",
+      "title": "Use Claude Pet when it is running",
+      "description": "If Claude Pet is running, let it start the new chat instead of the app link.",
+      "default": true
+    },
+    "fallback_model": {
+      "type": "string",
+      "title": "Fallback model",
+      "description": "Used only when the chat cannot be reused for the handoff (for example right after a resume). It is sent a trimmed copy of the chat.",
+      "default": "sonnet",
+      "options": ["sonnet", "opus", "haiku"]
+    }
+  }
+}

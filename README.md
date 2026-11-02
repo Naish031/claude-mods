@@ -1,99 +1,47 @@
 # claude-mods
 
-Small mods for Claude Code. A mod is a plugin that changes how Claude Code itself behaves.
+Nine mods for Claude Code. A mod changes what you see or adds a helper while you work.
 
-| Mod | What it does |
-| --- | --- |
-| [`brain-dump`](#brain-dump) | Turns a rambling voice dump into a clear, structured prompt before it is sent. |
+| Mod | What it does | Opens with |
+| --- | --- | --- |
+| [brain-dump](brain-dump) | Turns a long, rambling voice dump into a clear, structured prompt before it is sent | `/braindump` |
+| [helper-desk](helper-desk) | Task progress bar above the prompt, plus a pane with one live card per subagent | `/helpers` |
+| [cache-clock](cache-clock) | Countdown until the chat's prompt cache goes cold, with capped Keep warm | `/cacheclock` |
+| [handoff](handoff) | Writes a handoff of a very long chat and starts a fresh chat with it | `/handoff` |
+| [reflect](reflect) | Offers to save a correction as a lasting rule, with preview and undo | `/reflect` |
+| [chat-inventory](chat-inventory) | Pane listing the to-do list, connectors, files and skills this chat used | `/inventory` |
+| [screen-share](screen-share) | Hides names, emails, phones, amounts and secrets on screen while recording | `/screen-share` |
+| [replay-theater](replay-theater) | Steps through Claude's file edits, one diff at a time | `/replay` |
+| [mods](mods) | Switchboard to turn each mod on or off | `/mods` |
 
----
+Each folder has its own README with what it does, its settings and its limits.
 
-## Brain Dump
+## Install
 
-You dictate a prompt out loud. It comes out as a wall of "um, so, maybe, actually, wait, no" with the real request buried inside. Brain Dump sits between your dictation and Claude. It cleans the text up first, so Claude gets a clear, structured request and you get a better answer.
-
-### Install
-
-From a terminal session:
-
-```
-/plugin install brain-dump --marketplace Naish031/claude-mods
-```
-
-From a shell:
+From a shell, add the marketplace once, then install the mods you want:
 
 ```
-claude plugin install brain-dump --marketplace Naish031/claude-mods
+claude plugin marketplace add Naish031/claude-mods
 ```
 
-In the desktop app (where `/plugin` does not run): click **+** next to the prompt box, then **Plugins**, then **Add marketplace** with `Naish031/claude-mods`, then **Add plugin**.
-
-You will be asked `Add marketplace?`. Answer `y`, then pick a scope (user scope is fine). The mod is active straight away.
-
-### How to use it
-
-There is nothing to learn. Dictate or type a prompt and press Enter.
-
-1. **Short prompt (under 15 words):** sent as typed. Brain Dump stays out of the way.
-2. **Longer prompt:** Brain Dump rewrites it into a structured prompt.
-3. **Only if something important is missing:** it asks up to 3 multiple-choice questions, one at a time. Most prompts need none.
-4. **You approve:** you see the cleaned-up prompt, then choose **Send it**, **Send my original** or **Cancel**. Type under **Other** to ask for a change, for example "make it shorter" or "add that it must work on mobile".
-
-If you cancel, your original text is printed back so a long dictation is never lost.
-
-### Example
-
-You say:
-
-> okay so um I was thinking about the product page, the add to cart button is kind of small on mobile and maybe the color is off too, I don't know, can you take a look and fix it
-
-Brain Dump proposes:
-
 ```
-## Goal
-Make the add-to-cart button on the product page easier to use on mobile.
-
-## Requirements
-- Increase the button's size on mobile.
-- Review the button color and fix it if it is off.
+claude plugin install brain-dump@claude-mods
 ```
 
-### What it is good for
+Repeat the second command for each mod: `brain-dump`, `helper-desk`, `cache-clock`, `handoff`, `reflect`, `chat-inventory`, `screen-share`, `replay-theater`, `mods`. Then open a new chat, or run `/reload-plugins` in one that is already open.
 
-- Voice dictation: the main use. Talk freely, send something tidy.
-- Long, rambling thoughts that need turning into a clear task.
-- Handing Claude a vague idea and having it ask only the questions that matter.
-- Getting consistent prompts (goal, requirements, constraints, done-when) without writing them yourself.
+From a Claude Code terminal session you can type the same thing as `/plugin install brain-dump --marketplace Naish031/claude-mods`. In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `Naish031/claude-mods`, then **Add plugin**.
 
-### Shortcuts
+Needs Claude Code 2.1.309 or newer (screen-share will not load on older builds). Working from a local copy instead? Use its folder path in place of `Naish031/claude-mods`.
 
-| You do this | What happens |
-| --- | --- |
-| End your prompt with `!!` | Skips Brain Dump and sends exactly what you typed (without the `!!`). |
-| Start with `/` | Slash commands are never touched. |
+## How the mods fit together
 
-### What it will not do
+- **One switch file.** `~/.claude/claude-mods/switches.json` turns any mod off with `{"<mod>": false}`. The `mods` switchboard writes it safely.
+- **One log folder.** `~/.claude/claude-mods/logs/<mod>.log`, bounded, with no prompt text.
+- **Fail open.** If a mod breaks, your prompts and tool calls still go through untouched.
+- **`mod.json`** at each mod's root tells the switchboard its title, its pane command and whether it can hide or switch.
+- **cache-clock and handoff** are linked: when a big chat goes cold, cache-clock offers `/handoff`.
 
-- It does not invent requirements. If it has to assume something, it lists it under **Assumptions** so you can see it.
-- It keeps names, file paths, URLs, numbers and code exactly as you said them.
-- It leaves alone prompts from scheduled tasks, other sessions and headless runs.
-- If anything goes wrong (the model call fails, times out or returns something unusable), your original text is sent as typed.
+## Licence
 
-### Good to know
-
-- Each long prompt makes one small extra model call (Sonnet, low effort) through your own Claude session. Clarifying questions or change requests add more calls.
-- Your dictated text is sent to Claude as part of that call, the same as any prompt you send.
-- This is an early version (0.1.0). The 15-word cutoff and the model are constants at the top of [`brain-dump/hooks/register.ts`](brain-dump/hooks/register.ts) if you want to change them.
-
----
-
-## Layout
-
-Each mod is a folder with a standard layout, and the repository root is the marketplace.
-
-```
-.claude-plugin/marketplace.json     lists the mods
-brain-dump/
-├── .claude-plugin/plugin.json
-└── hooks/ (hooks.json, register.ts)
-```
+Everything here is original except `replay-theater`, which is derived from Anthropic's Claude Code DevRel sample under the Apache License 2.0 (see its `LICENSE` and `NOTICE`).

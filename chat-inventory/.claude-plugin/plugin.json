@@ -1,0 +1,27 @@
+{
+  "name": "chat-inventory",
+  "version": "0.1.0",
+  "description": "A side pane, In this chat, that lists the to-do list, the connectors used (with a call count and a tool breakdown for each), the files read or changed, and the skills this chat used.",
+  "author": { "name": "Naish Abbas" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "autoOpen": {
+      "type": "boolean",
+      "title": "Open by itself",
+      "description": "Open the In this chat pane the first time a chat uses a tool, a file or a skill.",
+      "default": true
+    },
+    "hideConnectors": {
+      "type": "string",
+      "title": "Hide these connectors",
+      "description": "Names to leave out of the Connectors list, separated by commas (for example: Terminal, Visualize). Matches the connector's name.",
+      "default": ""
+    },
+    "extraCliTools": {
+      "type": "string",
+      "title": "Extra command line tools",
+      "description": "Command line tools to count as connectors when Claude runs them in Bash. Write command=Name pairs separated by commas (for example: firecrawl=Firecrawl, aws=AWS).",
+      "default": ""
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "name": "screen-share",
+  "version": "0.1.0",
+  "description": "/screen-share hides emails, phone numbers, money amounts, names, keys and card numbers on screen while you record. Only the drawing changes: Claude and the chat still hold the real data. If hiding a row fails, the row is drawn as a bar, never as raw text.",
+  "author": { "name": "Naish Abbas" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "style": {
+      "type": "string",
+      "title": "How hidden text looks",
+      "description": "bar: shaded bars as long as the text. partial: a hint like j***@d***.com. label: a tag like [email].",
+      "options": ["bar", "partial", "label"],
+      "default": "bar"
+    },
+    "bar_glyph": {
+      "type": "string",
+      "title": "Bar character",
+      "description": "The character a bar is drawn with. Used by the bar style.",
+      "options": ["▒", "█", "▓", "░", "•", "*"],
+      "default": "▒"
+    },
+    "names": {
+      "type": "string",
+      "title": "Names",
+      "description": "off: never hide names. context: only where the text says it is a person (a From: line, Name <email>, Hi Jane). smart: also two words that look like a first and last name.",
+      "options": ["off", "context", "smart"],
+      "default": "smart"
+    },
+    "always_mask": {
+      "type": "string",
+      "title": "Always hide these words",
+      "description": "Names, clients, project code names. Separate with commas. Matches any case, and acme corp also finds acme-corp. Words added with /screen-share add are kept in ~/.claude/claude-mods/screen-share.json and join this list.",
+      "default": ""
+    },
+    "never_mask": {
+      "type": "string",
+      "title": "Never hide these words",
+      "description": "Words the automatic rules must leave alone, separated by commas. Start an entry with @ to allow a whole email domain (@mycompany.com). Words on the always-hide list still win.",
+      "default": ""
+    },
+    "mask_emails": { "type": "boolean", "title": "Hide emails", "description": "Email addresses.", "default": true },
+    "mask_phones": { "type": "boolean", "title": "Hide phone numbers", "description": "International and common national formats.", "default": true },
+    "mask_amounts": { "type": "boolean", "title": "Hide money amounts", "description": "Amounts with a currency sign, code or word, and plain numbers after words like total or price.", "default": true },
+    "mask_names": { "type": "boolean", "title": "Hide names", "description": "See Names for how names are found.", "default": true },
+    "mask_secrets": { "type": "boolean", "title": "Hide keys and tokens", "description": "API keys, tokens, passwords after a key name, private keys.", "default": true },
+    "mask_numbers": { "type": "boolean", "title": "Hide card and ID numbers", "description": "Card numbers that pass their checksum, IBANs, SSN-style IDs.", "default": true },
+    "mask_paths": { "type": "boolean", "title": "Hide your user name in folder paths", "description": "The name in /Users/<name>/ and /home/<name>/.", "default": true },
+    "mask_addresses": { "type": "boolean", "title": "Hide street addresses", "description": "Street lines, UK postcodes and US city, state ZIP lines, and fields named address or zip.", "default": true },
+    "mask_username": { "type": "boolean", "title": "Hide this computer's user name everywhere", "description": "Your account name (from your home folder) is hidden wherever it appears, not only in paths. Ordinary words like test or admin are never used.", "default": true },
+    "mask_panels": { "type": "boolean", "title": "Also hide in other mods' panels and bands", "description": "Walks the text of other mods' panes and the band above the prompt. Their layout is left alone.", "default": true },
+    "hide_suggestions": { "type": "boolean", "title": "Hide the prompt box suggestion", "description": "The dim suggestion in the prompt box is made from the chat and Tab writes it into the box, so it is hidden while screen share is on.", "default": true },
+    "peek_seconds": { "type": "number", "title": "Peek length (seconds)", "description": "How long Peek shows the real text before hiding it again. 1 to 120.", "default": 10 },
+    "fade_in": { "type": "boolean", "title": "Fade bars in", "description": "Draw the bars light for a moment when screen share turns on.", "default": true }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "replay-theater",
+  "version": "0.2.0",
+  "description": "Replay Theater: step through the file edits Claude made, one diff at a time. Any of the last turns, with real line numbers, side by side or unified, a file list, a filter, a patch to copy, and folded diffs for minified and generated files.",
+  "author": { "name": "Naish Abbas" },
+  "license": "Apache-2.0",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "keep_turns": {
+      "type": "number",
+      "title": "Turns kept",
+      "description": "How many of the latest turns that changed files can be replayed (1 to 50). They live in memory for this session only.",
+      "default": 10
+    },
+    "fold_over_lines": {
+      "type": "number",
+      "title": "Fold diffs longer than (lines)",
+      "description": "A diff that changes more lines than this starts folded, and so does a minified or generated file. Press Expand to open it. 0 never folds on size.",
+      "default": 300
+    },
+    "default_view": {
+      "type": "string",
+      "title": "Diff layout",
+      "description": "unified: one column, with syntax colours. split: old and new side by side. The s key and /replay split change it for the session.",
+      "options": ["unified", "split"],
+      "default": "unified"
+    },
+    "show_hint": {
+      "type": "boolean",
+      "title": "Show the hint above the prompt",
+      "description": "After a turn that changed files, show \"Replay: N edits (press r)\" above the prompt. Turn off to open the replay only with /replay.",
+      "default": true
+    }
+  }
+}

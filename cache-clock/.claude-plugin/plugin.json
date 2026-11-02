@@ -1,0 +1,66 @@
+{
+  "name": "cache-clock",
+  "version": "0.1.0",
+  "description": "A countdown above the prompt that shows when the chat's prompt cache goes cold, what that would cost, and an opt-in, capped Keep warm button. Offers a handoff to a fresh chat when a big chat goes cold.",
+  "author": {
+    "name": "Naish Abbas"
+  },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "cache_length": {
+      "type": "string",
+      "title": "Cache length",
+      "description": "How long the chat's cache stays warm after a reply. auto reads it from the last reply; pick 5m or 1h to force it.",
+      "options": ["auto", "5m", "1h"],
+      "default": "auto"
+    },
+    "read_transcript": {
+      "type": "boolean",
+      "title": "Read the chat log to find the cache length",
+      "description": "On: the last few hundred KB of this chat's own log file are read, on your computer only, to see whether the last reply wrote a 5 min or a 1 hour cache. Off: the length is a guess unless you set Cache length.",
+      "default": true
+    },
+    "show_cost": {
+      "type": "boolean",
+      "title": "Show cost estimates",
+      "description": "Show what replying now and a cold restart cost, and what Keep warm has spent.",
+      "default": true
+    },
+    "input_price_per_million": {
+      "type": "number",
+      "title": "Input price per million tokens (USD)",
+      "description": "Used for the cost estimates. 0 means use Claude Code's own figure when it gives one, else a list-price guess by model family.",
+      "default": 0
+    },
+    "big_chat_tokens": {
+      "type": "number",
+      "title": "Big chat size (tokens)",
+      "description": "A cold chat at least this big gets the handoff offer. 0 turns the offer off.",
+      "default": 150000
+    },
+    "handoff_command": {
+      "type": "string",
+      "title": "Handoff command",
+      "description": "The slash command (without the slash) that moves the chat to a fresh one. The button only shows when this command exists.",
+      "default": "handoff"
+    },
+    "warm_max_pings": {
+      "type": "number",
+      "title": "Keep warm: most pings",
+      "description": "Keep warm stops by itself after this many pings. Each ping costs tokens.",
+      "default": 20
+    },
+    "warm_max_minutes": {
+      "type": "number",
+      "title": "Keep warm: most minutes",
+      "description": "Keep warm stops by itself after this many minutes.",
+      "default": 90
+    },
+    "warm_lead_seconds": {
+      "type": "number",
+      "title": "Keep warm: ping this many seconds before the cache goes cold",
+      "description": "Between 15 and 120.",
+      "default": 45
+    }
+  }
+}

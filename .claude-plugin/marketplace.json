@@ -1,12 +1,63 @@
 {
   "name": "claude-mods",
-  "owner": { "name": "Naish Abbas" },
-  "description": "Small mods for Claude Code, starting with Brain Dump: turn a rambling voice dump into a clear, structured prompt.",
+  "owner": {
+    "name": "Naish Abbas"
+  },
+  "description": "Nine Claude Code mods: prompt shaping, a task bar, a cache clock, handoffs, saved rules, a chat inventory, screen-share hiding, an edit replay and a /mods switchboard.",
   "plugins": [
     {
       "name": "brain-dump",
       "source": "./brain-dump",
-      "description": "Turns a rambling voice dump into a clear, structured prompt before it is sent. Asks short multiple-choice questions when the ask is unclear."
+      "description": "Turns a long, rambling voice dump into a clear, structured prompt. Asks short multiple-choice questions about real gaps, then puts the result in your prompt box to check.",
+      "version": "0.2.0"
+    },
+    {
+      "name": "helper-desk",
+      "source": "./helper-desk",
+      "description": "A task progress bar above the prompt that fills as Claude ticks off its to-do list, plus a side pane with one live card per subagent.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "cache-clock",
+      "source": "./cache-clock",
+      "description": "Counts down above the prompt until the chat's prompt cache goes cold, with a capped, priced Keep warm option and a handoff offer for big chats.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "handoff",
+      "source": "./handoff",
+      "description": "When a chat gets very long, writes a handoff of the whole chat and starts a fresh chat with it. Saves a draft first and never loses your work.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "reflect",
+      "source": "./reflect",
+      "description": "When you correct Claude, offers to save the fix as a lasting rule. You see the exact text first, and every write can be undone.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "chat-inventory",
+      "source": "./chat-inventory",
+      "description": "A side pane listing what this chat used: the to-do list, connectors and calls, files and skills.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "screen-share",
+      "source": "./screen-share",
+      "description": "/screen-share hides names, emails, phone numbers, money amounts and secrets on screen while you record. Claude still reads the real data.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "replay-theater",
+      "source": "./replay-theater",
+      "description": "/replay steps through the file edits Claude made, one diff at a time. Derived from Anthropic's sample under Apache 2.0.",
+      "version": "0.2.0"
+    },
+    {
+      "name": "mods",
+      "source": "./mods",
+      "description": "/mods opens a switchboard to turn each mod on or off in every chat, and finds mods from any marketplace.",
+      "version": "0.1.0"
     }
   ]
 }

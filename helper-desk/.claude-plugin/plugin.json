@@ -1,0 +1,48 @@
+{
+  "name": "helper-desk",
+  "version": "0.1.0",
+  "description": "A purple task bar above the prompt that fills as Claude ticks off its to-do list, plus a side pane with one live card and one progress bar per subagent.",
+  "author": { "name": "Naish Abbas" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "bar_color": {
+      "type": "string",
+      "title": "Task bar colour",
+      "description": "The colour of the task bar above the prompt.",
+      "options": ["purple", "blue", "teal", "green", "orange", "pink"],
+      "default": "purple"
+    },
+    "animations": {
+      "type": "boolean",
+      "title": "Animations",
+      "description": "Moving sparkles, the running crab and the shimmer. Turn off for a still screen and less work for the computer.",
+      "default": true
+    },
+    "auto_open_pane": {
+      "type": "boolean",
+      "title": "Open the side pane by itself",
+      "description": "Open the Helper Desk pane when Claude starts its first subagent. You can always type /helpers.",
+      "default": true
+    },
+    "nudges": {
+      "type": "boolean",
+      "title": "Ask Claude to keep a to-do list",
+      "description": "Adds a short note to Claude's instructions and a gentle reminder after a few tool calls, so the task bar has something to show. Turn off if you only want the subagent cards.",
+      "default": true
+    },
+    "toasts": {
+      "type": "boolean",
+      "title": "Pop-ups when a step is done",
+      "description": "Show a short pop-up each time a step finishes, and when the whole list is done.",
+      "default": true
+    },
+    "hold_seconds": {
+      "type": "number",
+      "title": "Seconds to keep a finished bar",
+      "description": "How long the task bar stays at 100 percent before it goes away. Use 0 to hide it at once.",
+      "default": 20,
+      "min": 0,
+      "max": 600
+    }
+  }
+}

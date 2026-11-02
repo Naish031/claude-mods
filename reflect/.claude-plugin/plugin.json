@@ -1,0 +1,46 @@
+{
+  "name": "reflect",
+  "version": "0.1.0",
+  "description": "When you correct Claude, offers to save the fix as a lasting rule: in your global CLAUDE.md, in the project's CLAUDE.md, or as a note in a rules folder. Nothing is written until you press a button, you see the exact text first, and every save can be undone.",
+  "author": { "name": "Naish Abbas" },
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "rules_folder": {
+      "type": "string",
+      "title": "Rules folder",
+      "description": "The folder where Save to vault writes rule notes, for example ~/Documents/rules. Leave empty to be asked once and have the answer remembered.",
+      "default": ""
+    },
+    "project_scope": {
+      "type": "boolean",
+      "title": "Offer Save to project",
+      "description": "Show a Save to project button that adds the rule to the CLAUDE.md of the folder this chat runs in.",
+      "default": true
+    },
+    "sensitivity": {
+      "type": "string",
+      "title": "How eagerly to offer",
+      "description": "careful: only clear corrections (No, I said..., never do X, from now on). normal: clear ones, plus doubtful ones a quick check confirms. eager: also check weak hints.",
+      "options": ["careful", "normal", "eager"],
+      "default": "normal"
+    },
+    "cooldown_minutes": {
+      "type": "number",
+      "title": "Quiet time between offers (minutes)",
+      "description": "After an offer is shown, no new one for this long. It doubles for each offer in a row you skip. 0 turns the quiet time off.",
+      "default": 3
+    },
+    "model": {
+      "type": "string",
+      "title": "Model",
+      "description": "The model alias used to draft the rule, for example sonnet or haiku.",
+      "default": "sonnet"
+    },
+    "plain_dashes": {
+      "type": "boolean",
+      "title": "Plain dashes",
+      "description": "Replace long dashes with commas in the drafted rule.",
+      "default": true
+    }
+  }
+}

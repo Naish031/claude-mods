@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Mods Cheat Sheet</title>
+<style>
+  :root {
+    --bg: #f6f4f1; --paper: #ffffff; --ink: #1d1b19; --muted: #6a655e; --line: #e6e1da;
+    --kbd: #efebe5; --hero-a: #5b3df5; --hero-b: #2f7bf6; --hero-ink: #ffffff;
+    --warn: #b45309; --step-bg: #ffffff; --shadow: 0 1px 2px rgba(30,20,10,.06), 0 6px 18px rgba(30,20,10,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121110; --paper: #1b1917; --ink: #f2efea; --muted: #a8a198; --line: #34302c;
+      --kbd: #2a2622; --hero-a: #4a30c9; --hero-b: #2158b8; --warn: #f0b04a; --step-bg: #1b1917;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121110; --paper: #1b1917; --ink: #f2efea; --muted: #a8a198; --line: #34302c;
+    --kbd: #2a2622; --hero-a: #4a30c9; --hero-b: #2158b8; --warn: #f0b04a; --step-bg: #1b1917;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.25);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 13px/1.42 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page { max-width: 1040px; margin: 0 auto; padding: 18px 16px 22px; }
+
+  /* hero */
+  .hero {
+    background: linear-gradient(120deg, var(--hero-a), var(--hero-b));
+    color: var(--hero-ink); border-radius: 16px; padding: 16px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    box-shadow: var(--shadow);
+  }
+  .hero h1 { margin: 0; font-size: 22px; letter-spacing: -.02em; font-weight: 750; }
+  .hero p { margin: 2px 0 0; opacity: .88; font-size: 12.5px; }
+  .hero code { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.32); color: #fff; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.28);
+    padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  }
+
+  h2 {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted);
+    margin: 14px 2px 7px; font-weight: 700;
+  }
+  h2::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  code, kbd {
+    font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--kbd); padding: 1px 6px; border-radius: 5px; white-space: nowrap;
+    border: 1px solid var(--line);
+  }
+  kbd { border-bottom-width: 2px; }
+
+  /* routine */
+  .routine { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .step {
+    position: relative; background: var(--step-bg); border: 1px solid var(--line); border-radius: 12px;
+    padding: 9px 10px 9px 12px; box-shadow: var(--shadow);
+  }
+  .step .n {
+    display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+    background: var(--c); color: #fff; font-size: 11px; font-weight: 800; margin-right: 5px;
+  }
+  .step b { font-size: 12.5px; }
+  .step span { display: block; margin-top: 3px; color: var(--muted); font-size: 11.5px; }
+  .step:not(:last-child)::after {
+    content: "›"; position: absolute; right: -8px; top: 50%; transform: translateY(-50%);
+    color: var(--muted); font-size: 18px; line-height: 1; z-index: 1;
+  }
+
+  /* cards */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+  .card {
+    --tint: color-mix(in srgb, var(--c) 9%, var(--paper));
+    background: var(--tint); border: 1px solid color-mix(in srgb, var(--c) 28%, var(--line));
+    border-radius: 13px; padding: 9px 11px 10px; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  }
+  .card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+  .card h3 { margin: 0 0 4px; font-size: 14px; display: flex; align-items: center; gap: 7px; letter-spacing: -.01em; }
+  .badge {
+    display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px;
+    background: var(--c); color: #fff; font-size: 11px; font-weight: 800;
+  }
+  .card h3 em {
+    margin-left: auto; font-style: normal; font-weight: 700; font-size: 10px; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--c);
+  }
+  .card p { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+  .card ul { margin: 0; padding-left: 15px; font-size: 12px; }
+  .card li { margin: 2px 0; }
+  .card li::marker { color: var(--c); }
+
+  /* footer boxes */
+  .foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-top: 9px; }
+  .box { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 9px 11px; font-size: 12px; box-shadow: var(--shadow); }
+  .box h3 { margin: 0 0 4px; font-size: 12.5px; }
+  .box ul { margin: 0; padding-left: 15px; }
+  .box li { margin: 2px 0; }
+  .box.warn { border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+  .box.warn h3 { color: var(--warn); }
+
+  /* colours per mod */
+  .c-brain { --c: #7c4dff; } .c-helper { --c: #9333ea; } .c-replay { --c: #0ea5e9; }
+  .c-hand { --c: #f97316; } .c-cache { --c: #0d9488; } .c-reflect { --c: #db2777; }
+  .c-inv { --c: #4f46e5; } .c-screen { --c: #dc2626; } .c-mods { --c: #475569; }
+  .s1 { --c: #7c4dff; } .s2 { --c: #9333ea; } .s3 { --c: #0ea5e9; } .s4 { --c: #db2777; } .s5 { --c: #f97316; }
+
+  @media (max-width: 900px) {
+    .grid, .foot { grid-template-columns: repeat(2, 1fr); }
+    .routine { grid-template-columns: repeat(2, 1fr); }
+    .step::after { display: none; }
+  }
+  @media (max-width: 560px) {
+    .grid, .foot, .routine { grid-template-columns: 1fr; }
+    .page { padding: 14px 16px; }
+  }
+  @media print {
+    @page { size: A4; margin: 9mm; }
+    body { background: #fff; font-size: 10.5px; }
+    .page { max-width: none; padding: 0; }
+    .hero { padding: 10px 14px; border-radius: 12px; }
+    .hero h1 { font-size: 18px; }
+    .grid, .foot { grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .routine { grid-template-columns: repeat(5, 1fr); gap: 7px; }
+    .card, .box, .step, .hero { break-inside: avoid; box-shadow: none; }
+    .card p, .card ul, .box { font-size: 10px; }
+    .card h3 { font-size: 12px; }
+    code, kbd { font-size: 9.5px; padding: 0 4px; }
+    h2 { margin: 7px 2px 4px; }
+    .card { padding: 7px 10px 8px; }
+    .card li { margin: 1px 0; }
+    .step { padding: 7px 9px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hero">
+    <div>
+      <h1>Claude Mods cheat sheet</h1>
+      <p>Nine mods, installed from <code>~/Documents/Claude/claude-mods</code>. Type <code>/mods</code> to see and switch them.</p>
+    </div>
+    <div class="chips">
+      <span class="chip">9 mods</span>
+      <span class="chip">never block a prompt</span>
+      <span class="chip">switch any off</span>
+    </div>
+  </div>
+
+  <h2>Daily routine</h2>
+  <div class="routine">
+    <div class="step s1"><span class="n">1</span><b>Start</b><span>Dictate 40+ words. brain-dump tidies it. Read, edit, Enter.</span></div>
+    <div class="step s2"><span class="n">2</span><b>Work</b><span>Watch the purple bar. <code>/helpers</code> for subagents.</span></div>
+    <div class="step s3"><span class="n">3</span><b>Review</b><span><code>/replay</code> steps through the edits before you accept.</span></div>
+    <div class="step s4"><span class="n">4</span><b>Correct</b><span>reflect may offer a rule. Edit it short, then save.</span></div>
+    <div class="step s5"><span class="n">5</span><b>Long chat</b><span><code>/handoff</code> starts a fresh chat. Watch the clock.</span></div>
+  </div>
+
+  <h2>The nine mods</h2>
+  <div class="grid">
+
+    <div class="card c-brain">
+      <h3><span class="badge">B</span>brain-dump<em>Prompt</em></h3>
+      <p>Turns a rambling dictation into a clear prompt. Asks 1 to 3 multiple-choice questions only for real gaps.</p>
+      <ul>
+        <li>End a message with <code>!!</code> to send it exactly as typed</li>
+        <li><code>/braindump undo</code> puts your original back in the box</li>
+        <li><code>/braindump delivery review|confirm|auto</code></li>
+        <li><code>/braindump format standard|four-part</code>, <code>on</code>, <code>off</code>, <code>status</code></li>
+      </ul>
+    </div>
+
+    <div class="card c-helper">
+      <h3><span class="badge">H</span>helper-desk<em>/helpers</em></h3>
+      <p>Purple task bar above the prompt that fills as Claude ticks off its to-do list. A pane with one live card per subagent.</p>
+      <ul>
+        <li>Press &#10005; on the bar to dismiss it. It returns on the next list</li>
+        <li><code>/helpers hide</code> and <code>/helpers clear</code></li>
+        <li>Settings: bar colour, animations, pop-ups, reminders</li>
+      </ul>
+    </div>
+
+    <div class="card c-replay">
+      <h3><span class="badge">R</span>replay-theater<em>/replay</em></h3>
+      <p>Steps through Claude's file edits one diff at a time. Good for theme and Liquid changes.</p>
+      <ul>
+        <li><kbd>r</kbd> open, <kbd>n</kbd> next, <kbd>p</kbd> previous, <kbd>c</kbd> close</li>
+        <li><code>/replay list</code> and <code>/replay 2</code> for earlier turns</li>
+        <li>Copy or save a patch for a step, file or turn</li>
+      </ul>
+    </div>
+
+    <div class="card c-hand">
+      <h3><span class="badge">H</span>handoff<em>/handoff</em></h3>
+      <p>Writes a handoff of a long chat and starts a fresh one. Saves a draft first, so nothing is lost.</p>
+      <ul>
+        <li>Offers itself at 250k tokens (a setting). Snooze adds 100k</li>
+        <li><code>/handoff &lt;focus&gt;</code> to steer it, <code>/handoff last</code> to reopen</li>
+        <li>Secrets are redacted. Files are saved privately</li>
+      </ul>
+    </div>
+
+    <div class="card c-cache">
+      <h3><span class="badge">C</span>cache-clock<em>Above prompt</em></h3>
+      <p>Counts down until the chat's prompt cache goes cold. Offers <code>/handoff</code> when a big chat does.</p>
+      <ul>
+        <li>Keep warm costs tokens: opt-in, capped, priced. Leave it off</li>
+        <li><code>/cacheclock status</code>, <code>hide</code>, <code>/keepwarm status|off</code></li>
+        <li>A "guess" label means the cache length is estimated</li>
+      </ul>
+    </div>
+
+    <div class="card c-reflect">
+      <h3><span class="badge">R</span>reflect<em>/reflect</em></h3>
+      <p>When you correct Claude, offers to save the fix as a lasting rule. Shows the exact text first. Every write can be undone.</p>
+      <ul>
+        <li>Scopes: everywhere (<code>CLAUDE.md</code>), this project, or a rules folder</li>
+        <li><code>/reflect undo</code>, <code>list</code>, <code>mute</code>, <code>status</code></li>
+        <li>Your backup is <code>CLAUDE.md.backup</code></li>
+      </ul>
+    </div>
+
+    <div class="card c-inv">
+      <h3><span class="badge">I</span>chat-inventory<em>/inventory</em></h3>
+      <p>A pane of what this chat used: to-do list, connectors with call counts (Shopify, Figma, Slack), files and skills.</p>
+      <ul>
+        <li>Press a connector to see its calls</li>
+        <li><code>/inventory copy</code> copies the list as text</li>
+        <li><code>/inventory hide</code> closes the pane</li>
+      </ul>
+    </div>
+
+    <div class="card c-screen">
+      <h3><span class="badge">S</span>screen-share<em>/screen-share</em></h3>
+      <p>Hides names, emails, phones, amounts and secrets on screen while you record. Claude still reads the real data.</p>
+      <ul>
+        <li><code>/screen-share on|off|status</code>. Check the "ON" badge first</li>
+        <li><code>/screen-share peek 20</code> reveals for 20 seconds</li>
+        <li>Cannot hide: window title, sidebar, images, the box while typing</li>
+      </ul>
+    </div>
+
+    <div class="card c-mods">
+      <h3><span class="badge">M</span>mods<em>/mods</em></h3>
+      <p>The switchboard. Turn each mod on or off in every chat, and open the ones that have panes.</p>
+      <ul>
+        <li><code>/mods list</code>, <code>/mods off helper-desk</code></li>
+        <li>Press Off twice on mods itself, on purpose</li>
+        <li>"Turn Mods back on" if you switch it off</li>
+      </ul>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <div class="box">
+      <h3>Noisy or wrong?</h3>
+      <ul>
+        <li>Switch it off in <code>/mods</code>, or put <code>{"brain-dump": false}</code> in <code>~/.claude/claude-mods/switches.json</code></li>
+        <li>Mods never block your prompts. If one breaks, the original goes through</li>
+        <li>Logs, no prompt text: <code>~/.claude/claude-mods/logs/</code></li>
+        <li>Settings: <code>/plugin configure &lt;mod&gt;@claude-mods</code></li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Edit a mod, then reload</h3>
+      <ul>
+        <li>Mods load straight from the folder. Edit, then <code>/reload-plugins</code> or start a new chat</li>
+        <li>Commit in the folder before big changes</li>
+        <li>Keep Claude Code current: <code>claude update</code> (2.1.309 or newer)</li>
+      </ul>
+    </div>
+    <div class="box warn">
+      <h3>Good to know</h3>
+      <ul>
+        <li><b>Hooks skipped?</b> A built-in security plugin can override some events. The effect is small</li>
+        <li>brain-dump and cache-clock make extra small model calls through your own session</li>
+        <li>One README per mod in the folder</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

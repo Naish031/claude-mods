@@ -1,6 +1,40 @@
 {
   "name": "brain-dump",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Turns a long, rambling voice dump into a clear, structured prompt before it is sent. Asks short multiple-choice questions about real gaps first, then puts the result in your prompt box to check.",
   "author": { "name": "Naish Abbas" },
-  "description": "Turns a rambling voice dump into a clear, structured prompt before it is sent. Asks short multiple-choice questions when the ask is unclear."
+  "userConfig": {
+    "min_words": {
+      "type": "number",
+      "title": "Shortest dump",
+      "description": "Prompts shorter than this many words are sent as typed.",
+      "default": 40
+    },
+    "format": {
+      "type": "string",
+      "title": "Prompt format",
+      "description": "standard: Goal, Context, Requirements, Constraints, Done when. four-part: THE JOB, THE WHY, THE GUARDRAILS, DONE MEANS.",
+      "options": ["standard", "four-part"],
+      "default": "standard"
+    },
+    "delivery": {
+      "type": "string",
+      "title": "What happens to the result",
+      "description": "review: put it in the prompt box to check and edit, then press Enter. confirm: show it and ask in a dialog. auto: send it straight away.",
+      "options": ["review", "confirm", "auto"],
+      "default": "review"
+    },
+    "model": {
+      "type": "string",
+      "title": "Model",
+      "description": "The model alias used to tidy prompts, for example sonnet or haiku.",
+      "default": "sonnet"
+    },
+    "plain_dashes": {
+      "type": "boolean",
+      "title": "Plain dashes",
+      "description": "Replace long dashes with commas in the result.",
+      "default": true
+    }
+  }
 }
