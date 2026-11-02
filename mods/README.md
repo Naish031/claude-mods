@@ -17,7 +17,7 @@ Turning this mod itself off asks you to press Off twice. When it is off, the pan
 
 Your mod folders (setting below), the folder this mod sits in, `CLAUDE_CODE_PLUGIN_DIRS`, `~/.claude/mods/`, `~/.claude/dev-mods/<chat id>/` (this chat's own mods, then up to 20 other chats'), plugins installed from marketplaces (read from `~/.claude/plugins/installed_plugins.json`, with the on or off state from your plugin settings), and every module the engine admitted after this mod. A folder counts as a mod only if it has `.claude-plugin/plugin.json` and a `hooks/hooks.json` with `"modules"`. The Claude Code API has no call that lists loaded plugins, so "Loaded" is worked out from the commands and settings rows the engine reports and the modules it admitted; a mod with none of those shows as "Installed".
 
-**Setting: Folders that hold your mods.** Default `~/Documents/Claude/claude-mods`. Colon-separated; one folder per mod inside each; `~` is your home.
+**Setting: Folders that hold your mods.** Default `~/Documents/Claude/claude-mods-publish`. The folder this mod itself sits in is always searched too. Colon-separated; one folder per mod inside each; `~` is your home.
 
 ## The switch file
 

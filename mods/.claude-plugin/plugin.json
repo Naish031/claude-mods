@@ -2,14 +2,16 @@
   "name": "mods",
   "version": "0.1.0",
   "description": "The switchboard for your mods. /mods opens a pane that finds every mod on this Mac (your folders, marketplaces, this chat's own), turns each one on or off in every chat, hides or shows it, and opens the side-pane ones.",
-  "author": { "name": "Naish Abbas" },
+  "author": {
+    "name": "Naish Abbas"
+  },
   "types": "./types/index.d.ts",
   "userConfig": {
     "mod_folders": {
       "type": "string",
       "title": "Folders that hold your mods",
-      "description": "Folders to look in for mods, one folder per mod inside each. Separate several with a colon. ~ means your home folder.",
-      "default": "~/Documents/Claude/claude-mods"
+      "description": "Folders to look in for mods, one folder per mod inside each. Separate several with a colon. ~ means your home folder. The folder this mod itself sits in is always searched too.",
+      "default": "~/Documents/Claude/claude-mods-publish"
     }
   }
 }

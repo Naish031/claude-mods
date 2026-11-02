@@ -16,7 +16,7 @@ const HOME = '/Users/test'
 const MODS = `${HOME}/.claude/claude-mods`
 const SWITCHES = `${MODS}/switches.json`
 const LOG = `${MODS}/logs/mods.log`
-const CLAUDE_MODS = `${HOME}/Documents/Claude/claude-mods`
+const CLAUDE_MODS = `${HOME}/Documents/Claude/claude-mods-publish`
 const SID = 'sess1'
 const SURFACES = ['desktop', 'terminal'] as const
 

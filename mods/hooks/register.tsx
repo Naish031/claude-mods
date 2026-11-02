@@ -64,7 +64,7 @@ type Handle = { cancel: () => void }
 type Admitted = { root: string; version: string; provenance: string }
 type UndoEntry = { label: string; before: Record<string, unknown>; after: Record<string, unknown> }
 
-const cfg = { modFolders: '~/Documents/Claude/claude-mods' }
+const cfg = { modFolders: '~/Documents/Claude/claude-mods-publish' }
 
 // What the module keeps between events. Everything drawn comes from $.state or the file.
 const s = {
