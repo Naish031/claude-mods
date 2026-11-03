@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { briefPrompt, hasStructure, isBrainDump, parseGaps, tidy } from './register'
+import { briefPrompt, hasStructure, isBrainDump, looksShaped, parseGaps, squash, tidy } from './register'
 
 const BRIEF = `## Goal
 Make the add-to-cart button easier to use on mobile.
@@ -25,6 +25,19 @@ const filler =
   'okay so I was thinking about the product page and um the add to cart button is kind of small on mobile and maybe the color is off too and I do not know if the sticky bar is helping or hurting but can you take a look and fix whatever is wrong and keep the desktop layout exactly as it is because the client signed it off last week'
 
 const dump = filler.split(/\s+/).slice(0, 60).join(' ')
+
+// A long brief the model wrote with plain opening sentences and no "## Goal", as in the bug report.
+const PLAIN = `${filler.split(/\s+/).slice(0, 25).join(' ')}.
+
+## Context
+${filler.split(/\s+/).slice(25, 45).join(' ')}.
+
+## Requirements
+- ${filler.split(/\s+/).slice(45, 60).join(' ')}.
+- Keep the desktop layout exactly as it is.
+
+## Constraints
+- The client signed the desktop layout off last week.`
 const composer = { kind: 'composer' } as const
 
 type Harness = {
@@ -116,7 +129,16 @@ test('the helpers read, clean and check text', () => {
 
   expect(tidy('```\n## Goal\nA — B\n```', 'standard', true)).toBe('## Goal\nA, B')
   expect(tidy('Sure! Here it is:\n\n## Goal\nA', 'standard', true)).toBe('## Goal\nA')
-  expect(tidy('x — y', 'standard', false)).toBe('x — y')
+  expect(tidy('x — y', 'standard', false)).toBe('## Goal\nx — y')
+  expect(tidy('Plain opening.\n\n## Context\nX', 'standard', true)).toBe('## Goal\nPlain opening.\n\n## Context\nX')
+  expect(tidy('hello', 'four-part', true)).toBe('hello')
+
+  expect(looksShaped(PLAIN), 'two of our headings, no Goal').toBe(true)
+  expect(looksShaped(FOUR)).toBe(true)
+  expect(looksShaped(`${dump}\n\n## Requirements\n- one`), 'one heading is not enough').toBe(false)
+  expect(looksShaped(dump)).toBe(false)
+  expect(isBrainDump(PLAIN, 40)).toBe(false)
+  expect(squash('  A  b\n\nC ')).toBe('a b c')
   expect(hasStructure(FOUR, 'four-part')).toBe(true)
   expect(hasStructure('THE JOB\nonly', 'four-part')).toBe(false)
 
@@ -136,7 +158,7 @@ for (const surface of ['desktop', 'terminal'] as const) {
 
     const r = await $.prompt.submit({ text: dump, origin: composer, wait: false } as never)
 
-    expect((r as { drop?: string }).drop).toBe('shaped into a brief')
+    expect((r as { drop?: string }).drop).toContain('prompt box')
     expect(h.passed.length, 'the original is not sent').toBe(0)
     expect(h.filled).toEqual([BRIEF])
     expect(h.store.lastOriginal, 'the original is kept for undo').toBe(dump)
@@ -147,6 +169,40 @@ for (const surface of ['desktop', 'terminal'] as const) {
     expect(h.passed).toEqual([BRIEF])
   })
 }
+
+test('a long brief put in the box is never shaped again, even without ## Goal or after a touch-up', { timeoutMs: 30000 }, async ($, on) => {
+  const h = wire(on, { brief: PLAIN })
+  await start($, 'desktop')
+
+  await $.prompt.submit({ text: dump, origin: composer, wait: false } as never)
+  const brief = h.filled[0] ?? ''
+  const modelCalls = h.prompts.length
+
+  expect(brief.startsWith('## Goal\n'), 'a Goal heading is always put first').toBe(true)
+  expect(h.store.recentBriefs, 'the brief is remembered across reloads').toContain(squash(brief))
+
+  // Enter on the brief, the brief with the box's whitespace changed, and the model's raw text.
+  await $.prompt.submit({ text: brief, origin: composer, wait: false } as never)
+  await $.prompt.submit({ text: `${brief.replace(/\n\n/g, '\n')}\n`, origin: composer, wait: false } as never)
+  await $.prompt.submit({ text: PLAIN, origin: composer, wait: false } as never)
+
+  expect(h.passed.map(t => t.trim())).toEqual([brief, brief.replace(/\n\n/g, '\n'), PLAIN])
+  expect(h.prompts.length, 'no further model call').toBe(modelCalls)
+  expect(h.filled.length, 'nothing is put in the box again').toBe(1)
+  expect(Object.values(h.files).join('')).toContain('sent a brief as it is')
+})
+
+test('a brief remembered before a reload is still recognised without headings', { timeoutMs: 30000 }, async ($, on) => {
+  const h = wire(on)
+  await start($, 'desktop')
+  const remembered = `${dump} ${dump}`
+  h.store.recentBriefs = JSON.stringify([squash(remembered)])
+
+  await $.prompt.submit({ text: `  ${remembered}\n`, origin: composer, wait: false } as never)
+
+  expect(h.passed.map(t => t.trim())).toEqual([remembered])
+  expect(h.prompts.length).toBe(0)
+})
 
 test('short prompts, slash lines, other senders and the !! bypass pass through', { timeoutMs: 30000 }, async ($, on) => {
   const h = wire(on)

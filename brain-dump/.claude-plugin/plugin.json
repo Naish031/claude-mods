@@ -1,6 +1,6 @@
 {
   "name": "brain-dump",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Turns a long, rambling voice dump into a clear, structured prompt before it is sent. Asks short multiple-choice questions about real gaps first, then puts the result in your prompt box to check.",
   "author": { "name": "Naish Abbas" },
   "userConfig": {

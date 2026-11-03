@@ -9,13 +9,13 @@
       "name": "brain-dump",
       "source": "./brain-dump",
       "description": "Turns a long, rambling voice dump into a clear, structured prompt. Asks short multiple-choice questions about real gaps, then puts the result in your prompt box to check.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     {
       "name": "helper-desk",
       "source": "./helper-desk",
       "description": "A task progress bar above the prompt that fills as Claude ticks off its to-do list, plus a side pane with one live card per subagent.",
-      "version": "0.1.0"
+      "version": "0.2.0"
     },
     {
       "name": "cache-clock",

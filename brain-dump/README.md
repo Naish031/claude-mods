@@ -7,7 +7,8 @@ You dictate a long, rambling prompt. Brain Dump tidies it into a clear, structur
 1. **Under 40 words:** sent as typed.
 2. **Longer:** a quick read looks for real gaps and clashes (two instructions that disagree, or a must-know fact that is missing). If it finds any, it asks up to 3 multiple-choice questions, one at a time. Type under **Other** for your own answer. Dismissing a question skips it.
 3. The prompt is rewritten into a short structure. Your names, paths, links, numbers and code are kept exactly. Nothing is invented.
-4. **The result goes into your prompt box.** Read it, edit it, press Enter to send. (Settings below can show a dialog or send straight away instead.)
+4. **The result goes into your prompt box.** Read it, edit it, press Enter to send. (Settings below can show a dialog or send straight away instead.) The transcript notes that the brief is waiting in the box; your original is not sent.
+5. **Pressing Enter on the brief sends it as it is.** A brief always starts with `## Goal`, and Brain Dump also recognises its own briefs by their headings and by a short memory of what it wrote, so a brief you edited a little is never rewritten again.
 
 ## Commands
 
